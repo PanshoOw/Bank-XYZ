@@ -1,115 +1,78 @@
-package com.duoc.demo.BatchConfig;
+package com.duoc.demo.Config;
 
-import java.time.format.DateTimeParseException;
+import java.io.IOException;
 
 import javax.sql.DataSource;
 
+import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.infrastructure.item.database.JdbcBatchItemWriter;
-import org.springframework.batch.infrastructure.item.database.builder.JdbcBatchItemWriterBuilder;
-import org.springframework.batch.infrastructure.item.file.FlatFileItemReader;
-import org.springframework.batch.infrastructure.item.file.FlatFileParseException;
-import org.springframework.batch.infrastructure.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.infrastructure.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import com.duoc.demo.Legacy.LegacyCuentas;
-import com.duoc.demo.Modern.ModernCuentas;
+import com.duoc.demo.Listener.CuentaSkipListener;
+import com.duoc.demo.Model.LegacyCuentas;
+import com.duoc.demo.Model.ModernCuentas;
+import com.duoc.demo.Partition.BankPartitioner;
+import com.duoc.demo.Policy.BankSkipPolicy;
 import com.duoc.demo.Processor.LegacyCuentasProcessor;
+import com.duoc.demo.Reader.CuentasReader;
+import com.duoc.demo.Writer.CuentasWriter;
+
+import org.springframework.dao.TransientDataAccessException;
 
 @Configuration
-public class CuentasBatch {
+public class CuentasConfig {
 
     @Bean
-    public FlatFileItemReader<LegacyCuentas> cuentasReader() {
-
-        return new FlatFileItemReaderBuilder<LegacyCuentas>()
-                .name("legacyCuentasReader")
-                .resource(new ClassPathResource("data/cuentas_anuales.csv"))
-                .linesToSkip(1)
-                .delimited()
-                .delimiter(",")
-                .names(
-                        "cuentaId",
-                        "fecha",
-                        "transaccion",
-                        "monto",
-                        "descripcion"
-                )
-                .fieldSetMapper(fieldSet -> new LegacyCuentas(
-                        fieldSet.readString("cuentaId"),
-                        fieldSet.readString("fecha"),
-                        fieldSet.readString("transaccion"),
-                        fieldSet.readString("monto"),
-                        fieldSet.readString("descripcion")
-                ))
-                .build();
+    @StepScope
+    public CuentasReader cuentasReader(
+            @Value("#{stepExecutionContext['start']}") Integer start,
+            @Value("#{stepExecutionContext['end']}") Integer end)throws IOException {
+        return new CuentasReader(
+            "data/cuentas_anuales.csv",
+            start,
+            end);
     }
 
     @Bean
+    @StepScope
     public LegacyCuentasProcessor cuentasProcessor() {
         return new LegacyCuentasProcessor();
     }
 
     @Bean
-    public JdbcBatchItemWriter<ModernCuentas> cuentasWriter(
-            DataSource dataSource) {
-
-        String sql = """
-                INSERT INTO MOVIMIENTOS_ANUALES_PROCESADOS
-                    (
-                        CUENTA_ID,
-                        FECHA,
-                        TRANSACCION,
-                        MONTO,
-                        DESCRIPCION,
-                        ESTADO,
-                        DETALLE_VALIDACION
-                    )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """;
-
-        return new JdbcBatchItemWriterBuilder<ModernCuentas>()
-                .dataSource(dataSource)
-                .sql(sql)
-                .itemPreparedStatementSetter((cuenta, ps) -> {
-                    ps.setInt(1, cuenta.cuentaId());
-                    ps.setDate(
-                            2,
-                            java.sql.Date.valueOf(cuenta.fecha())
-                    );
-                    ps.setString(3, cuenta.transaccion());
-                    ps.setBigDecimal(4, cuenta.monto());
-                    ps.setString(5, cuenta.descripcion());
-                    ps.setString(6, cuenta.estado());
-                    ps.setString(7, cuenta.detalleValidacion());
-                })
-                .build();
+    public CuentasWriter cuentasWriter(JdbcTemplate jdbcTemplate) {
+        return new CuentasWriter(jdbcTemplate);
     }
 
     @Bean
     Step stepCuentas(
             JobRepository jobRepository,
-            FlatFileItemReader<LegacyCuentas> reader,
+            CuentasReader reader,
             LegacyCuentasProcessor processor,
-            JdbcBatchItemWriter<ModernCuentas> writer) {
+            CuentasWriter writer,
+            BankSkipPolicy bankSkipPolicy,
+            CuentaSkipListener cuentaSkipListener) {
 
         return new StepBuilder("stepCuentas", jobRepository)
-                .<LegacyCuentas, ModernCuentas>chunk(2)
+                .<LegacyCuentas, ModernCuentas>chunk(5)
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
                 .faultTolerant()
-                .skip(FlatFileParseException.class)
-                .skip(NumberFormatException.class)
-                .skip(DateTimeParseException.class)
-                .skipLimit(10)
+                .retry(TransientDataAccessException.class)
+                .retryLimit(2)
+                .skipPolicy(bankSkipPolicy)
+                .listener(cuentaSkipListener)
                 .build();
     }
 
@@ -236,10 +199,34 @@ public class CuentasBatch {
         return new StepBuilder("stepLimpiarMovimientos", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
                     jdbcTemplate.update(
-                            "DELETE FROM MOVIMIENTOS_ANUALES_PROCESADOS"
-                    );
+                            "DELETE FROM MOVIMIENTOS_ANUALES_PROCESADOS");
                     return RepeatStatus.FINISHED;
                 }, transactionManager)
+                .build();
+    }
+
+    @Bean
+    public TaskExecutorPartitionHandler partitionHandlerCuentas(
+            Step stepCuentas,
+            TaskExecutor taskExecutor
+    ) {
+        TaskExecutorPartitionHandler handler = new TaskExecutorPartitionHandler();
+        handler.setStep(stepCuentas);
+        handler.setTaskExecutor(taskExecutor);
+        handler.setGridSize(5);
+        return handler;
+    }
+
+    @Bean
+    public Step partitionStepCuentas(
+            JobRepository jobRepository,
+            BankPartitioner bankPartitioner,
+            @Qualifier("partitionHandlerCuentas") 
+            TaskExecutorPartitionHandler partitionHandler
+    ) {
+        return new StepBuilder("partitionStepCuentas", jobRepository)
+                .partitioner("stepCuentas", bankPartitioner)
+                .partitionHandler(partitionHandler)
                 .build();
     }
 }

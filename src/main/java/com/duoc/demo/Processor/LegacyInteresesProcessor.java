@@ -2,13 +2,12 @@ package com.duoc.demo.Processor;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.HashSet;
-import java.util.Set;
 
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 
-import com.duoc.demo.Legacy.LegacyIntereses;
-import com.duoc.demo.Modern.ModernIntereses;
+import com.duoc.demo.Exception.CampoObligatorioException;
+import com.duoc.demo.Model.LegacyIntereses;
+import com.duoc.demo.Model.ModernIntereses;
 
 public class LegacyInteresesProcessor
         implements ItemProcessor<LegacyIntereses, ModernIntereses> {
@@ -25,18 +24,26 @@ public class LegacyInteresesProcessor
     private static final BigDecimal TASA_PRESTAMO =
             new BigDecimal("0.02");
 
-    private final Set<String> cuentasProcesadas = new HashSet<>();
-
     @Override
     public ModernIntereses process(LegacyIntereses item) throws Exception {
 
         Integer cuentaId = Integer.valueOf(item.cuentaId().trim());
         String nombre = item.nombre().trim();
+        BigDecimal saldoInicial;
 
-        BigDecimal saldoInicial =
-                new BigDecimal(item.saldo().trim());
+        try {
+            saldoInicial = new BigDecimal(item.saldo().trim());
+        } catch (Exception e) {
+            throw new CampoObligatorioException("El campo saldo es obligatorio");
+        }
 
-        Integer edad = Integer.valueOf(item.edad().trim());
+        Integer edad;
+
+        try {
+            edad = Integer.valueOf(item.edad().trim());
+        } catch (Exception e) {
+            throw new CampoObligatorioException("El campo edad es obligatorio");
+        }
 
         String tipo = item.tipo().trim().toLowerCase();
 
@@ -46,6 +53,7 @@ public class LegacyInteresesProcessor
         BigDecimal tasaInteres = null;
         BigDecimal interesCalculado = null;
         BigDecimal saldoFinal = saldoInicial;
+        
 
         // Validación del saldo
         if (saldoInicial.compareTo(BigDecimal.ZERO) < 0) {
@@ -89,21 +97,6 @@ public class LegacyInteresesProcessor
                     .setScale(2, RoundingMode.HALF_UP);
         }
 
-        // Detección de posibles duplicados
-        String claveCuenta =
-                nombre.toLowerCase() + "|" +
-                saldoInicial.stripTrailingZeros().toPlainString() + "|" +
-                edad + "|" +
-                tipo;
-
-        if (!cuentasProcesadas.add(claveCuenta)) {
-            estado = ESTADO_ANOMALIA;
-            detalleValidacion = agregarDetalle(
-                    detalleValidacion,
-                    "Posible registro duplicado"
-            );
-        }
-
         return new ModernIntereses(
                 cuentaId,
                 nombre,
@@ -114,7 +107,8 @@ public class LegacyInteresesProcessor
                 interesCalculado,
                 saldoFinal,
                 estado,
-                detalleValidacion
+                detalleValidacion,
+                item.lineaOrigen()
         );
     }
 

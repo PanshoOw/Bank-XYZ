@@ -1,674 +1,327 @@
-# Banco XYZ - Procesamiento Batch con Spring Batch
+# Bank XYZ - Procesamiento Batch
 
-## Descripción
+Proyecto desarrollado para la asignatura **Desarrollo Backend III (PBY2203)**.
 
-Proyecto desarrollado para la asignatura **Desarrollo Backend III (PBY2203)**, orientado a la modernización de procesos batch pertenecientes a un sistema legacy del Banco XYZ mediante **Spring Batch**.
-
-La aplicación procesa archivos CSV correspondientes a transacciones diarias, cálculo de intereses mensuales y movimientos anuales de cuentas. Los datos son leídos, transformados, validados y posteriormente persistidos en una base de datos **Oracle Autonomous Database en Oracle Cloud**.
-
-La solución incorpora reglas de validación de negocio, detección de anomalías, tolerancia a errores durante el procesamiento, persistencia mediante JDBC y almacenamiento de la metadata de ejecución de Spring Batch.
-
----
-
-## Objetivo
-
-Implementar una solución batch capaz de migrar y procesar información proveniente de archivos CSV legacy, asegurando la consistencia e integridad de los datos mediante Spring Batch.
-
-El sistema contempla tres procesos principales:
-
-* **Reporte de transacciones diarias:** procesa transacciones, identifica anomalías y persiste los resultados validados.
-* **Cálculo de intereses mensuales:** calcula intereses para cuentas de ahorro y préstamos, determina el saldo final y registra inconsistencias.
-* **Generación de estados de cuenta anuales:** procesa movimientos anuales y consolida la información por cuenta y año para fines de auditoría.
-
----
+El objetivo es modernizar procesos batch legacy del Banco XYZ utilizando **Spring Batch**, procesando archivos CSV con información bancaria, aplicando validaciones y transformaciones, manejando registros incorrectos y persistiendo los resultados en una base de datos Oracle.
 
 ## Tecnologías utilizadas
 
-* Java 18
-* Spring Boot 4.1.0
-* Spring Batch
-* Spring Batch JDBC
-* Spring JDBC
-* Oracle JDBC
-* Oracle Autonomous Database
-* Oracle Wallet
-* HikariCP
-* Maven
-* Git y GitHub
+- Java 18
+- Spring Boot
+- Spring Batch
+- Spring JDBC
+- Oracle Database
+- Maven
+- Oracle Wallet
+- Git / GitHub
 
----
+## Procesos implementados
 
-## Arquitectura general
+El proyecto contiene tres Jobs principales.
 
-Cada proceso sigue el modelo de procesamiento de Spring Batch:
+### 1. Reporte de Transacciones Diarias
 
-```text
-Archivo CSV
-    ↓
-ItemReader
-    ↓
-ItemProcessor
-    ↓
-Validación y transformación
-    ↓
-ItemWriter
-    ↓
-Oracle Autonomous Database
-```
-
-Los procesos se encuentran separados en Jobs independientes, permitiendo su ejecución y seguimiento individual.
-
----
-
-## Estructura del proyecto
-
-```text
-demo/
-│
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── com/duoc/demo/
-│   │   │       ├── BatchConfig/
-│   │   │       │   ├── CuentasBatch.java
-│   │   │       │   ├── InteresesBatch.java
-│   │   │       │   └── transaccionesBatch.java
-│   │   │       │
-│   │   │       ├── Legacy/
-│   │   │       │   ├── LegacyCuentas.java
-│   │   │       │   ├── LegacyIntereses.java
-│   │   │       │   └── LegacyTransacciones.java
-│   │   │       │
-│   │   │       ├── Modern/
-│   │   │       │   ├── ModernCuentas.java
-│   │   │       │   ├── ModernIntereses.java
-│   │   │       │   └── ModernTransacciones.java
-│   │   │       │
-│   │   │       ├── Processor/
-│   │   │       │   ├── LegacyCuentasProcessor.java
-│   │   │       │   ├── LegacyInteresesProcessor.java
-│   │   │       │   └── LegacyTransaccionesProcessor.java
-│   │   │       │
-│   │   │       ├── BatchJobConfig.java
-│   │   │       └── DemoApplication.java
-│   │   │
-│   │   └── resources/
-│   │       ├── data/
-│   │       │   ├── cuentas_anuales.csv
-│   │       │   ├── intereses.csv
-│   │       │   └── transacciones.csv
-│   │       │
-│   │       └── application.properties
-│   │
-│   └── test/
-│
-├── pom.xml
-├── mvnw
-├── mvnw.cmd
-└── README.md
-```
-
----
-
-# Procesos Batch
-
-## 1. Reporte de Transacciones Diarias
-
-### Job
+Job:
 
 ```text
 reporteTransaccionesDiariasJob
 ```
 
-### Step
+Procesa las transacciones diarias, valida los registros y genera un resumen de las operaciones procesadas.
 
-```text
-stepTransacciones
-```
+Principales resultados:
 
-### Archivo de entrada
+- 1000 registros de entrada.
+- 785 registros procesados.
+- 215 registros omitidos debido a errores de datos.
+- 387 registros válidos.
+- 398 registros con anomalías.
+- Generación del resumen diario de transacciones.
 
-```text
-transacciones.csv
-```
+### 2. Cálculo de Intereses Mensuales
 
-### Funcionamiento
-
-El proceso:
-
-1. Lee las transacciones desde el archivo CSV.
-2. Convierte los datos legacy a tipos Java adecuados.
-3. Valida cada transacción.
-4. Detecta posibles anomalías.
-5. Persiste los resultados en Oracle.
-
-### Validaciones implementadas
-
-Se consideran anomalías:
-
-* Montos negativos.
-* Montos iguales a cero.
-* Posibles transacciones duplicadas.
-
-Los registros se clasifican mediante:
-
-```text
-VALIDA
-ANOMALIA
-```
-
-Cuando se detecta una anomalía, se almacena además su descripción en `DETALLE_VALIDACION`.
-
-### Tabla de salida
-
-```text
-TRANSACCIONES_PROCESADAS
-```
-
-La persistencia se realiza mediante `JdbcBatchItemWriter` utilizando una sentencia `MERGE`, lo que permite actualizar registros existentes o insertar registros nuevos.
-
----
-
-## 2. Cálculo de Intereses Mensuales
-
-### Job
+Job:
 
 ```text
 calculoInteresesMensualesJob
 ```
 
-### Step
+Procesa información de cuentas bancarias y calcula los intereses correspondientes a cuentas de ahorro y préstamos.
 
-```text
-stepIntereses
-```
+Se utilizan las siguientes tasas:
 
-### Archivo de entrada
+- Ahorro: 1 %
+- Préstamo: 2 %
 
-```text
-intereses.csv
-```
+Principales resultados:
 
-### Funcionamiento
+- 1000 registros de entrada.
+- 363 registros omitidos por campos obligatorios inválidos o faltantes.
+- 50 cuentas consolidadas en la base de datos.
+- Validación correcta de tasas de interés.
+- Validación correcta del interés calculado.
+- Validación correcta del saldo final.
 
-El proceso:
+### 3. Estados de Cuenta Anuales
 
-1. Lee la información de las cuentas.
-2. Valida el saldo y el tipo de cuenta.
-3. Determina la tasa de interés correspondiente.
-4. Calcula el interés mensual.
-5. Calcula el saldo final.
-6. Detecta posibles inconsistencias.
-7. Persiste los resultados en Oracle.
-
-### Tasas utilizadas
-
-Como decisión técnica del proyecto se definieron las siguientes tasas mensuales:
-
-```text
-Cuenta de ahorro:  1 %
-Préstamo:          2 %
-```
-
-### Fórmulas
-
-```text
-INTERES_CALCULADO = SALDO_INICIAL × TASA_INTERES
-```
-
-```text
-SALDO_FINAL = SALDO_INICIAL + INTERES_CALCULADO
-```
-
-### Validaciones implementadas
-
-Se consideran anomalías:
-
-* Saldo negativo.
-* Saldo igual a cero.
-* Tipo de cuenta no soportado.
-* Posibles registros duplicados.
-
-Los tipos contemplados para el cálculo son:
-
-```text
-ahorro
-prestamo
-```
-
-Los tipos diferentes se conservan en la base de datos, pero se clasifican como anomalía para mantener trazabilidad.
-
-### Tabla de salida
-
-```text
-INTERESES_PROCESADOS
-```
-
-La persistencia utiliza `MERGE` para permitir la reejecución del proceso sin generar duplicados por clave primaria.
-
----
-
-## 3. Generación de Estados de Cuenta Anuales
-
-### Job
+Job:
 
 ```text
 estadosCuentaAnualesJob
 ```
 
-Este Job posee tres Steps:
+Procesa los movimientos anuales y genera estados de cuenta consolidados para su utilización en procesos de auditoría.
+
+Principales resultados:
+
+- 1000 registros de entrada.
+- 952 registros procesados.
+- 48 registros omitidos.
+- 329 registros válidos.
+- 623 registros clasificados con anomalías.
+- Generación de estados de cuenta anuales consolidados.
+
+## Arquitectura del proyecto
+
+El procesamiento utiliza la arquitectura propia de Spring Batch:
 
 ```text
-estadosCuentaAnualesJob
-        │
-        ├── stepLimpiarMovimientos
-        │
-        ├── stepCuentas
-        │
-        └── stepResumenAnual
+CSV
+ ↓
+ItemReader
+ ↓
+ItemProcessor
+ ↓
+ItemWriter
+ ↓
+Oracle Database
 ```
 
-### Archivo de entrada
+Los Jobs se encuentran separados de sus respectivas configuraciones de procesamiento.
+
+Entre los principales componentes del proyecto se encuentran:
 
 ```text
-cuentas_anuales.csv
+Config/
+    BatchJobConfig
+    TransaccionesConfig
+    InteresesConfig
+    CuentasConfig
+    ExecutorConfig
+
+Reader/
+Processor/
+Writer/
+Listener/
+Policy/
+Partition/
+Decider/
+Model/
+Exception/
 ```
 
-### Step 1 - Limpieza de movimientos
+### Reader
 
-```text
-stepLimpiarMovimientos
-```
+Lee los registros provenientes de los archivos CSV legacy.
 
-Elimina la carga anterior de movimientos procesados antes de realizar una nueva importación completa del archivo anual.
+### Processor
 
-Esto evita duplicar movimientos al reejecutar el Job.
+Realiza transformaciones, validaciones y clasificación de anomalías antes de persistir los datos.
 
-### Step 2 - Procesamiento de movimientos
+### Writer
 
-```text
-stepCuentas
-```
+Persiste los resultados procesados utilizando Spring JDBC y Oracle.
 
-Lee los movimientos anuales, transforma los datos y aplica validaciones según el tipo de transacción.
+## Tolerancia a fallos
 
-Los tipos contemplados son:
-
-```text
-deposito
-retiro
-compra
-```
-
-Las reglas utilizadas son:
-
-* Un depósito debe tener un monto mayor que cero.
-* Un retiro debe representar un egreso mediante un monto negativo.
-* Una compra debe representar un egreso mediante un monto negativo.
-* Los tipos desconocidos son clasificados como anomalía.
-
-Los movimientos procesados son almacenados en:
-
-```text
-MOVIMIENTOS_ANUALES_PROCESADOS
-```
-
-### Step 3 - Generación del resumen anual
-
-```text
-stepResumenAnual
-```
-
-Este Step agrupa los movimientos por:
-
-```text
-CUENTA_ID + ANIO
-```
-
-y genera información consolidada para auditoría.
-
-Se calculan:
-
-* Total de depósitos.
-* Total de retiros.
-* Total de compras.
-* Cantidad total de movimientos.
-* Saldo anual.
-* Cantidad de anomalías.
-
-Los resultados son almacenados en:
-
-```text
-ESTADOS_CUENTA_ANUALES
-```
-
-La generación del resumen utiliza una sentencia `MERGE`, permitiendo actualizar un estado anual existente cuando el Job vuelve a ejecutarse.
-
----
-
-# Manejo de errores
-
-Los Steps orientados a procesamiento mediante chunks utilizan tolerancia a fallos de Spring Batch.
-
-Se configuraron:
+Los Steps principales se encuentran configurados mediante:
 
 ```java
 .faultTolerant()
-.skip(...)
-.skipLimit(10)
 ```
 
-El sistema diferencia dos categorías de problemas.
+El proyecto implementa una política personalizada de omisión mediante `BankSkipPolicy`.
 
-## Anomalías de negocio
+Entre las situaciones controladas se encuentran:
 
-Son datos que pueden ser interpretados, pero incumplen las reglas definidas.
+- Campos obligatorios faltantes.
+- Montos inválidos.
+- Fechas inválidas.
+- Errores de formato.
+- Registros con información inconsistente.
 
-Ejemplos:
+Los registros descartados son registrados mediante `SkipListener`, permitiendo identificar el registro y la causa del problema.
+
+También se utiliza un `BankJobDecider` para determinar si cada Job terminó con registros omitidos.
+
+## Política de reintentos
+
+Para errores transitorios relacionados con el acceso a la base de datos se utiliza:
+
+```java
+.retry(TransientDataAccessException.class)
+.retryLimit(2)
+```
+
+En el proceso de intereses también se controla específicamente una posible condición de concurrencia asociada a claves duplicadas durante escrituras paralelas.
+
+Los errores correspondientes a datos de negocio no se reintentan, sino que son gestionados mediante la política de omisión.
+
+## Procesamiento paralelo
+
+El proyecto utiliza **partitioning** de Spring Batch.
+
+Configuración utilizada:
 
 ```text
-Monto igual a cero
-Monto negativo cuando no corresponde
-Tipo de cuenta no soportado
-Tipo de transacción no soportado
-Registro posiblemente duplicado
+Grid size: 5
+Chunk size: 5
+Pool size: 3
 ```
 
-Estos registros se conservan en Oracle utilizando:
+El `TaskExecutor` permite ejecutar las particiones utilizando múltiples workers:
 
 ```text
-ESTADO = ANOMALIA
+batch-worker-1
+batch-worker-2
+batch-worker-3
 ```
 
-junto con el motivo almacenado en:
+## Comparación de rendimiento
 
-```text
-DETALLE_VALIDACION
+Se probaron distintas configuraciones del pool de threads utilizando el mismo Job, los mismos 1000 registros y la misma configuración de particiones.
+
+| Threads | Tiempo del Job |
+|---:|---:|
+| 1 | 7,251 s |
+| 2 | 4,593 s |
+| 3 | 3,401 s |
+
+La configuración con **3 threads** obtuvo el mejor tiempo en las pruebas realizadas.
+
+En comparación con un solo thread, el tiempo total disminuyó aproximadamente un **53 %**.
+
+Por esta razón se seleccionó como configuración final:
+
+```properties
+app.poolSize=3
 ```
 
-## Errores técnicos de datos
+## Base de datos
 
-Errores como:
+El proyecto utiliza Oracle Database.
 
-* Valores numéricos con formato inválido.
-* Fechas con formato incorrecto.
-* Líneas CSV que no pueden ser interpretadas.
-
-pueden ser omitidos mediante las políticas de `skip` configuradas en los Steps.
-
-El límite establecido es de:
-
-```text
-10 registros
-```
-
-Si se supera ese límite, el Step finaliza con error.
-
-Los errores graves de infraestructura o persistencia no son ignorados.
-
----
-
-# Persistencia en Oracle
-
-La aplicación utiliza **Oracle Autonomous Database** como base de datos relacional.
-
-Se creó un usuario específico para la aplicación:
-
-```text
-BANKXYZ_APP
-```
-
-La conexión se realiza mediante Oracle JDBC utilizando un **Oracle Wallet**.
-
-Las principales tablas de negocio son:
+Entre las tablas utilizadas para almacenar los resultados se encuentran:
 
 ```text
 TRANSACCIONES_PROCESADAS
+RESUMEN_TRANSACCIONES_DIARIAS
+
 INTERESES_PROCESADOS
+
 MOVIMIENTOS_ANUALES_PROCESADOS
 ESTADOS_CUENTA_ANUALES
 ```
 
-Spring Batch utiliza además sus propias tablas de metadata:
+## Configuración de conexión
 
-```text
-BATCH_JOB_INSTANCE
-BATCH_JOB_EXECUTION
-BATCH_JOB_EXECUTION_PARAMS
-BATCH_JOB_EXECUTION_CONTEXT
-BATCH_STEP_EXECUTION
-BATCH_STEP_EXECUTION_CONTEXT
-```
+La conexión a Oracle utiliza Oracle Wallet.
 
-Estas permiten registrar y consultar las ejecuciones de Jobs y Steps.
-
----
-
-# Reejecución de Jobs
-
-Los tres Jobs utilizan:
-
-```java
-RunIdIncrementer
-```
-
-Esto permite generar nuevas instancias de ejecución mediante el parámetro:
-
-```text
-run.id
-```
-
-Las tablas de transacciones e intereses utilizan sentencias Oracle `MERGE`, evitando duplicados al ejecutar nuevamente los procesos.
-
-El Job anual limpia previamente los movimientos importados y luego vuelve a generar el resumen consolidado.
-
----
-
-# Configuración de Oracle Wallet
-
-Por seguridad, el Wallet de Oracle **no debe almacenarse dentro del repositorio Git**.
-
-La ruta del Wallet se proporciona mediante una variable de entorno:
-
-```text
-ORACLE_WALLET_DIR
-```
-
-También se utiliza una variable de entorno para la contraseña del usuario de Oracle:
-
-```text
-BANKXYZ_DB_PASSWORD
-```
+La contraseña de la base de datos y la ubicación del Wallet se configuran mediante variables de entorno para evitar almacenar credenciales directamente en el repositorio.
 
 Ejemplo en PowerShell:
 
 ```powershell
-$env:ORACLE_WALLET_DIR="C:\ruta\al\Wallet_BANKXYZ"
-
-$env:BANKXYZ_DB_PASSWORD="contraseña_del_usuario"
+$env:ORACLE_WALLET_DIR="RUTA_DEL_WALLET"
+$env:BANKXYZ_DB_PASSWORD="CONTRASEÑA"
 ```
 
----
-
-# Configuración de la aplicación
-
-El archivo:
-
-```text
-src/main/resources/application.properties
-```
-
-utiliza una configuración similar a la siguiente:
+Configuración principal en `application.properties`:
 
 ```properties
-spring.application.name=demo
-
-# Oracle Autonomous Database
 spring.datasource.url=jdbc:oracle:thin:@bankxyz_tp
 spring.datasource.username=BANKXYZ_APP
 spring.datasource.password=${BANKXYZ_DB_PASSWORD}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
 
-# Oracle Wallet
 spring.datasource.hikari.data-source-properties[oracle.net.tns_admin]=${ORACLE_WALLET_DIR}
 
-# Spring Batch
-spring.batch.job.enabled=true
-spring.batch.job.name=estadosCuentaAnualesJob
 spring.batch.jdbc.initialize-schema=never
 spring.batch.jdbc.isolation-level-for-create=READ_COMMITTED
+
+app.totalRecords=1000
+app.poolSize=3
+app.maxSkipCount=100
 ```
 
-El servicio Oracle utilizado es:
+## Selección del Job
 
-```text
-bankxyz_tp
-```
-
----
-
-# Selección del Job
-
-Para ejecutar un proceso específico debe modificarse:
+Para ejecutar un Job específico debe modificarse la propiedad:
 
 ```properties
 spring.batch.job.name=
 ```
 
-## Transacciones diarias
+### Transacciones diarias
 
 ```properties
 spring.batch.job.name=reporteTransaccionesDiariasJob
 ```
 
-## Intereses mensuales
+### Intereses mensuales
 
 ```properties
 spring.batch.job.name=calculoInteresesMensualesJob
 ```
 
-## Estados de cuenta anuales
+### Estados de cuenta anuales
 
 ```properties
 spring.batch.job.name=estadosCuentaAnualesJob
 ```
 
----
+## Ejecución
 
-# Requisitos para ejecutar el proyecto
-
-Antes de iniciar la aplicación se requiere:
-
-* Java 18.
-* Maven o Maven Wrapper incluido en el proyecto.
-* Acceso a Oracle Autonomous Database.
-* Oracle Wallet descargado y descomprimido.
-* Usuario `BANKXYZ_APP` habilitado.
-* Variables de entorno configuradas.
-* Tablas de negocio creadas en Oracle.
-* Tablas de metadata de Spring Batch creadas.
-
----
-
-# Compilación
-
-Desde la raíz del proyecto:
-
-```powershell
-.\mvnw.cmd clean compile
-```
-
-Una compilación correcta debe finalizar con:
-
-```text
-BUILD SUCCESS
-```
-
----
-
-# Ejecución
-
-Después de seleccionar el Job correspondiente en `application.properties`, ejecutar:
+Desde la carpeta raíz del proyecto ejecutar:
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-Spring Batch ejecutará únicamente el Job seleccionado.
+Spring Batch ejecutará únicamente el Job seleccionado en `application.properties`.
 
----
-
-# Archivos de entrada
-
-Los archivos CSV se encuentran en:
+Una ejecución correcta finaliza con un mensaje similar a:
 
 ```text
-src/main/resources/data/
+status: [COMPLETED]
 ```
 
-y corresponden a:
+seguido por:
 
 ```text
-transacciones.csv
-intereses.csv
-cuentas_anuales.csv
+BUILD SUCCESS
 ```
 
-Estos archivos representan la información proveniente del sistema legacy del Banco XYZ.
+## Manejo de credenciales
 
----
+Las credenciales de Oracle no deben almacenarse directamente dentro del repositorio.
 
-# Seguridad
+Antes de ejecutar el proyecto se deben configurar las variables de entorno correspondientes al Wallet y a la contraseña de la base de datos.
 
-El proyecto evita almacenar credenciales directamente en el código fuente.
+## Evidencias
 
-Los siguientes datos deben mantenerse fuera del repositorio:
+Las evidencias de ejecución incluyen:
 
-* Contraseña de Oracle.
-* Oracle Wallet.
-* Certificados y archivos criptográficos.
-* Credenciales personales.
+- Ejecución del Job de transacciones diarias.
+- Resultados generados en Oracle.
+- Ejecución del Job de intereses mensuales.
+- Validación de cálculos de intereses y saldos.
+- Ejecución del Job de estados de cuenta anuales.
+- Resultados consolidados en Oracle.
+- Ejecución paralela mediante tres workers.
 
-La configuración sensible se proporciona mediante variables de entorno.
+## Resultado final
 
----
+La solución implementa los tres procesos batch solicitados utilizando Spring Batch, incorporando validaciones, tolerancia a fallos, políticas de omisión, reintentos, procesamiento mediante chunks, particionamiento y ejecución multithread.
 
-# Resultados
-
-La implementación permite:
-
-* Procesar archivos CSV mediante Spring Batch.
-* Ejecutar Jobs independientes para cada proceso solicitado.
-* Transformar información legacy.
-* Aplicar reglas de negocio.
-* Detectar anomalías.
-* Tolerar determinados errores de datos mediante políticas de `skip`.
-* Calcular intereses y saldos.
-* Generar estados de cuenta anuales consolidados.
-* Persistir los resultados en Oracle Cloud.
-* Registrar la metadata de Jobs y Steps.
-* Reejecutar los procesos evitando duplicación de información.
-
----
-
-# Evidencias de ejecución
-
-Se generaron evidencias correspondientes a:
-
-1. Ejecución del Job de transacciones diarias.
-2. Resultado de transacciones procesadas en Oracle.
-3. Ejecución del Job de intereses mensuales.
-4. Resultado del cálculo de intereses en Oracle.
-5. Ejecución del Job de estados de cuenta anuales.
-6. Estados de cuenta anuales consolidados en Oracle.
-7. Anomalía detectada durante el procesamiento de movimientos anuales.
-
----
-
-## Autores
-
-Proyecto desarrollado como actividad académica para la asignatura:
-
-**Desarrollo Backend III - PBY2203**
-
-**Duoc UC**
+Las pruebas realizadas muestran que la configuración con tres threads mejora el rendimiento del procesamiento manteniendo la consistencia de los resultados generados.

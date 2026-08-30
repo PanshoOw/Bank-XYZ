@@ -1,4 +1,4 @@
-package com.duoc.demo.Legacy;
+package com.duoc.demo.Model;
 
 public record LegacyCuentas(
         String cuentaId,

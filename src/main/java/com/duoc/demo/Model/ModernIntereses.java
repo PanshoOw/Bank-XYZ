@@ -1,8 +1,9 @@
-package com.duoc.demo.Modern;
+package com.duoc.demo.Model;
 
 import java.math.BigDecimal;
 
 public record ModernIntereses(
+
     Integer cuentaId,
     String nombre,
     BigDecimal saldoInicial,
@@ -12,6 +13,8 @@ public record ModernIntereses(
     BigDecimal interesCalculado,
     BigDecimal saldoFinal,
     String estado,
-    String detalleValidacion
+    String detalleValidacion,
+    Integer lineaOrigen
+
 ) {
 }

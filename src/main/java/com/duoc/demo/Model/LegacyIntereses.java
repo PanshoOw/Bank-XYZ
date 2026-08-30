@@ -1,10 +1,13 @@
-package com.duoc.demo.Legacy;
+package com.duoc.demo.Model;
 
 public record LegacyIntereses(
+
     String cuentaId,
     String nombre,
     String saldo,
     String edad,
-    String tipo
+    String tipo,
+    int lineaOrigen
+
 ) {
 }
