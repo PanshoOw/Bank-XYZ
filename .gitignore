@@ -30,3 +30,6 @@ ojdbc.properties
 
 # Salidas generadas por versiones anteriores del proyecto
 output/
+
+# Evidencias de la entrega
+evidencias/

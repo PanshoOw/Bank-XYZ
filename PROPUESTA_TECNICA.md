@@ -1,134 +1,46 @@
-# Propuesta Técnica - Bank XYZ
+# Propuesta Técnica - Implementación Backend for Frontend (BFF)
 
-## 1. Objetivo
+## 1. Contexto
 
-La solución moderniza tres procesos batch legacy del Banco XYZ utilizando Spring Batch:
+El proyecto Bank XYZ corresponde a la continuidad del sistema desarrollado previamente para procesar y gestionar información bancaria utilizando Spring Boot, Spring Batch y Oracle Database.
 
-- Reporte de transacciones diarias.
-- Cálculo de intereses mensuales.
-- Generación de estados de cuenta anuales.
+Para la Semana 4 se incorpora el patrón arquitectónico Backend for Frontend (BFF), con el objetivo de adaptar la información y las operaciones según las necesidades de distintos tipos de clientes.
 
-El diseño busca mantener la consistencia de los datos, controlar registros incorrectos y mejorar el rendimiento mediante procesamiento paralelo.
+Los clientes considerados son:
 
-## 2. Arquitectura propuesta
+- Aplicación Web
+- Aplicación Móvil
+- Cajero Automático (ATM)
 
-Cada proceso fue implementado como un Job independiente de Spring Batch y utiliza el flujo:
+## 2. Estrategia seleccionada
 
-```text
-Reader → Processor → Writer
-```
+Se seleccionó la estrategia de implementar un backend específico para cada tipo de cliente.
 
-Los archivos CSV son divididos en particiones para permitir su procesamiento concurrente.
+La solución está compuesta por:
 
-La configuración principal utilizada es:
+- Backend principal Bank XYZ
+- BFF Web
+- BFF Mobile
+- BFF ATM
 
-```text
-Chunk size: 5
-Grid size: 5
-Pool size: 3
-```
+Cada BFF se implementa como una aplicación Spring Boot independiente y se comunica con el backend principal mediante APIs REST.
 
-Los cinco segmentos de datos son distribuidos entre tres workers mediante `TaskExecutorPartitionHandler`.
+La guía de aprendizaje plantea esta estrategia como una forma de separar la lógica específica de cada cliente y permitir que cada frontend reciba únicamente la información que necesita.
 
-## 3. Procesamiento y validación
-
-Los `ItemProcessor` realizan las transformaciones y validaciones necesarias antes de persistir la información.
-
-Se controlan, entre otros casos:
-
-- Campos obligatorios faltantes.
-- Fechas con formatos inválidos.
-- Montos inválidos.
-- Tipos de datos no reconocidos.
-- Valores que deben clasificarse como anomalías.
-
-Los datos válidos y las anomalías que pueden ser procesadas son almacenados en Oracle, mientras que los registros que no pueden continuar son omitidos mediante una política controlada.
-
-## 4. Tolerancia a fallos
-
-Los Steps utilizan configuración `faultTolerant`.
-
-La política personalizada `BankSkipPolicy` permite omitir errores de datos conocidos sin detener completamente el Job.
-
-Además, los `SkipListener` registran los elementos descartados y su causa.
-
-Para errores transitorios de acceso a datos se configuró una política de reintento utilizando:
-
-```java
-.retry(TransientDataAccessException.class)
-.retryLimit(2)
-```
-
-En el Job de intereses mensuales también se contempla `DuplicateKeyException`, debido a una condición de concurrencia detectada durante escrituras paralelas sobre una misma clave.
-
-Los errores correspondientes a datos de negocio son gestionados mediante la política de omisión y no mediante reintentos.
-
-## 5. Escalamiento y paralelismo
-
-Se seleccionó partitioning como estrategia de escalamiento.
-
-Para determinar la cantidad adecuada de threads se ejecutó el Job de transacciones diarias con el mismo volumen de 1000 registros, manteniendo constantes el `chunk size` y el número de particiones.
-
-| Threads | Tiempo particiones | Tiempo total Job |
-|---:|---:|---:|
-| 1 | 6,977 s | 7,251 s |
-| 2 | 4,360 s | 4,593 s |
-| 3 | 3,109 s | 3,401 s |
-
-La configuración de tres threads obtuvo el menor tiempo de ejecución.
-
-Respecto a la ejecución con un thread, el tiempo total se redujo aproximadamente un 53 %.
-
-Por este motivo se seleccionó como configuración final:
-
-```properties
-app.poolSize=3
-```
-
-Esta configuración también permite observar la ejecución concurrente mediante:
+## 3. Arquitectura propuesta
 
 ```text
-batch-worker-1
-batch-worker-2
-batch-worker-3
-```
-
-## 6. Resultados obtenidos
-
-### Transacciones diarias
-
-```text
-Registros de entrada: 1000
-Registros procesados: 785
-Registros omitidos: 215
-Registros válidos: 387
-Registros con anomalías: 398
-```
-
-### Intereses mensuales
-
-```text
-Registros de entrada: 1000
-Registros omitidos: 363
-Cuentas consolidadas: 50
-Errores detectados en tasas: 0
-Errores detectados en intereses: 0
-Errores detectados en saldos finales: 0
-```
-
-### Estados de cuenta anuales
-
-```text
-Registros de entrada: 1000
-Registros procesados: 952
-Registros omitidos: 48
-Registros válidos: 329
-Registros con anomalías: 623
-Estados generados: 20
-```
-
-## 7. Conclusión
-
-La propuesta permite ejecutar los tres procesos requeridos mediante una arquitectura Spring Batch modular y tolerante a fallos.
-
-El uso de particiones y tres threads permitió mejorar el rendimiento manteniendo los resultados esperados. Además, la combinación de validaciones, políticas de omisión, listeners y reintentos permite continuar el procesamiento frente a registros incorrectos o fallos recuperables sin comprometer la ejecución completa del Job.
+                         Oracle Database
+                               │
+                               ▼
+                   Backend principal Bank XYZ
+                         Puerto 8080
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+                ▼              ▼              ▼
+            BFF Web       BFF Mobile       BFF ATM
+             8081             8082            8083
+                │              │              │
+                ▼              ▼              ▼
+              Web            Móvil          Cajero

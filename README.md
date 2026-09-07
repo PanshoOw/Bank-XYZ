@@ -1,327 +1,410 @@
-# Bank XYZ - Procesamiento Batch
+# Bank XYZ - Backend for Frontend (BFF)
 
 Proyecto desarrollado para la asignatura **Desarrollo Backend III (PBY2203)**.
 
-El objetivo es modernizar procesos batch legacy del Banco XYZ utilizando **Spring Batch**, procesando archivos CSV con información bancaria, aplicando validaciones y transformaciones, manejando registros incorrectos y persistiendo los resultados en una base de datos Oracle.
+Esta versión corresponde a la continuidad del proyecto Bank XYZ, incorporando el patrón arquitectónico **Backend for Frontend (BFF)** para entregar servicios personalizados a tres tipos de clientes:
+
+- Aplicación Web
+- Aplicación Móvil
+- Cajero Automático (ATM)
+
+## Objetivo
+
+El objetivo del proyecto es implementar el patrón Backend for Frontend (BFF), permitiendo que cada tipo de cliente disponga de un backend adaptado a sus necesidades.
+
+El sistema mantiene un backend principal encargado del acceso a los datos del Banco XYZ y tres BFF independientes que consumen dicho backend mediante HTTP.
+
+Cada BFF transforma la información antes de entregarla al frontend correspondiente.
+
+## Arquitectura
+
+La arquitectura implementada es la siguiente:
+
+```text
+                         Oracle Database
+                               │
+                               ▼
+                   Backend principal Bank XYZ
+                         Puerto 8080
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+                ▼              ▼              ▼
+            BFF Web       BFF Mobile       BFF ATM
+             8081             8082            8083
+                │              │              │
+                ▼              ▼              ▼
+              Web            Móvil          Cajero
+```
+
+Se utilizó la estrategia de crear un backend específico para cada tipo de cliente.
+
+Los BFF no acceden directamente a Oracle. Todos obtienen la información mediante las APIs REST del backend principal.
 
 ## Tecnologías utilizadas
 
 - Java 18
-- Spring Boot
+- Spring Boot 4.1.1
+- Spring MVC
 - Spring Batch
 - Spring JDBC
+- Spring Security
 - Oracle Database
-- Maven
 - Oracle Wallet
+- Maven
 - Git / GitHub
 
-## Procesos implementados
-
-El proyecto contiene tres Jobs principales.
-
-### 1. Reporte de Transacciones Diarias
-
-Job:
+## Estructura del proyecto
 
 ```text
-reporteTransaccionesDiariasJob
+demo/
+│
+├── src/
+│   └── main/java/com/duoc/demo/
+│       ├── Config/
+│       ├── Controller/
+│       ├── Dto/
+│       ├── Model/
+│       ├── Processor/
+│       ├── Reader/
+│       ├── Repository/
+│       ├── Service/
+│       └── Writer/
+│
+├── bff-web/
+│   └── src/main/java/com/duoc/bffweb/
+│       ├── config/
+│       ├── controller/
+│       ├── dto/
+│       └── service/
+│
+├── bff-mobile/
+│   └── src/main/java/com/duoc/bffmobile/
+│       ├── config/
+│       ├── controller/
+│       ├── dto/
+│       └── service/
+│
+├── bff-atm/
+│   └── src/main/java/com/duoc/bffatm/
+│       ├── config/
+│       ├── controller/
+│       ├── dto/
+│       └── service/
+│
+└── pom.xml
 ```
 
-Procesa las transacciones diarias, valida los registros y genera un resumen de las operaciones procesadas.
+## Backend principal
 
-Principales resultados:
-
-- 1000 registros de entrada.
-- 785 registros procesados.
-- 215 registros omitidos debido a errores de datos.
-- 387 registros válidos.
-- 398 registros con anomalías.
-- Generación del resumen diario de transacciones.
-
-### 2. Cálculo de Intereses Mensuales
-
-Job:
+El backend principal se ejecuta en:
 
 ```text
-calculoInteresesMensualesJob
+http://localhost:8080
 ```
 
-Procesa información de cuentas bancarias y calcula los intereses correspondientes a cuentas de ahorro y préstamos.
+Su función es acceder a los datos almacenados en Oracle y proporcionar una API general que posteriormente es consumida por los BFF.
 
-Se utilizan las siguientes tasas:
+### Endpoints principales
 
-- Ahorro: 1 %
-- Préstamo: 2 %
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/cuentas` | Obtiene todas las cuentas |
+| GET | `/api/cuentas/{id}` | Obtiene una cuenta por ID |
+| POST | `/api/cuentas/{id}/retiro` | Realiza un retiro |
 
-Principales resultados:
-
-- 1000 registros de entrada.
-- 363 registros omitidos por campos obligatorios inválidos o faltantes.
-- 50 cuentas consolidadas en la base de datos.
-- Validación correcta de tasas de interés.
-- Validación correcta del interés calculado.
-- Validación correcta del saldo final.
-
-### 3. Estados de Cuenta Anuales
-
-Job:
+Ejemplo:
 
 ```text
-estadosCuentaAnualesJob
+GET http://localhost:8080/api/cuentas/101
 ```
 
-Procesa los movimientos anuales y genera estados de cuenta consolidados para su utilización en procesos de auditoría.
+## BFF Web
 
-Principales resultados:
-
-- 1000 registros de entrada.
-- 952 registros procesados.
-- 48 registros omitidos.
-- 329 registros válidos.
-- 623 registros clasificados con anomalías.
-- Generación de estados de cuenta anuales consolidados.
-
-## Arquitectura del proyecto
-
-El procesamiento utiliza la arquitectura propia de Spring Batch:
+El BFF Web se ejecuta en:
 
 ```text
-CSV
- ↓
-ItemReader
- ↓
-ItemProcessor
- ↓
-ItemWriter
- ↓
-Oracle Database
+http://localhost:8081
 ```
 
-Los Jobs se encuentran separados de sus respectivas configuraciones de procesamiento.
+Está orientado a navegadores y entrega información más completa de las cuentas.
 
-Entre los principales componentes del proyecto se encuentran:
+### Endpoints
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/web/cuentas` | Lista las cuentas |
+| GET | `/api/web/cuentas/{id}` | Obtiene el detalle de una cuenta |
+
+Ejemplo:
 
 ```text
-Config/
-    BatchJobConfig
-    TransaccionesConfig
-    InteresesConfig
-    CuentasConfig
-    ExecutorConfig
-
-Reader/
-Processor/
-Writer/
-Listener/
-Policy/
-Partition/
-Decider/
-Model/
-Exception/
+GET http://localhost:8081/api/web/cuentas/101
 ```
 
-### Reader
+La respuesta Web contiene información como:
 
-Lee los registros provenientes de los archivos CSV legacy.
+- ID de cuenta
+- Nombre del cliente
+- Edad
+- Tipo de cuenta
+- Saldo inicial
+- Tasa de interés
+- Interés generado
+- Saldo actual
+- Estado
 
-### Processor
+## BFF Mobile
 
-Realiza transformaciones, validaciones y clasificación de anomalías antes de persistir los datos.
-
-### Writer
-
-Persiste los resultados procesados utilizando Spring JDBC y Oracle.
-
-## Tolerancia a fallos
-
-Los Steps principales se encuentran configurados mediante:
-
-```java
-.faultTolerant()
-```
-
-El proyecto implementa una política personalizada de omisión mediante `BankSkipPolicy`.
-
-Entre las situaciones controladas se encuentran:
-
-- Campos obligatorios faltantes.
-- Montos inválidos.
-- Fechas inválidas.
-- Errores de formato.
-- Registros con información inconsistente.
-
-Los registros descartados son registrados mediante `SkipListener`, permitiendo identificar el registro y la causa del problema.
-
-También se utiliza un `BankJobDecider` para determinar si cada Job terminó con registros omitidos.
-
-## Política de reintentos
-
-Para errores transitorios relacionados con el acceso a la base de datos se utiliza:
-
-```java
-.retry(TransientDataAccessException.class)
-.retryLimit(2)
-```
-
-En el proceso de intereses también se controla específicamente una posible condición de concurrencia asociada a claves duplicadas durante escrituras paralelas.
-
-Los errores correspondientes a datos de negocio no se reintentan, sino que son gestionados mediante la política de omisión.
-
-## Procesamiento paralelo
-
-El proyecto utiliza **partitioning** de Spring Batch.
-
-Configuración utilizada:
+El BFF Mobile se ejecuta en:
 
 ```text
-Grid size: 5
-Chunk size: 5
-Pool size: 3
+http://localhost:8082
 ```
 
-El `TaskExecutor` permite ejecutar las particiones utilizando múltiples workers:
+Su objetivo es entregar respuestas más ligeras, evitando enviar información innecesaria a dispositivos móviles.
+
+### Endpoints
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/mobile/cuentas` | Lista resumida de cuentas |
+| GET | `/api/mobile/cuentas/{id}` | Obtiene información resumida de una cuenta |
+
+Ejemplo:
 
 ```text
-batch-worker-1
-batch-worker-2
-batch-worker-3
+GET http://localhost:8082/api/mobile/cuentas/101
 ```
 
-## Comparación de rendimiento
+La respuesta Mobile contiene solamente:
 
-Se probaron distintas configuraciones del pool de threads utilizando el mismo Job, los mismos 1000 registros y la misma configuración de particiones.
+- ID de cuenta
+- Nombre
+- Tipo de cuenta
+- Saldo actual
+- Estado
 
-| Threads | Tiempo del Job |
-|---:|---:|
-| 1 | 7,251 s |
-| 2 | 4,593 s |
-| 3 | 3,401 s |
+De esta forma se reduce la cantidad de información transferida en comparación con el BFF Web.
 
-La configuración con **3 threads** obtuvo el mejor tiempo en las pruebas realizadas.
+## BFF ATM
 
-En comparación con un solo thread, el tiempo total disminuyó aproximadamente un **53 %**.
-
-Por esta razón se seleccionó como configuración final:
-
-```properties
-app.poolSize=3
-```
-
-## Base de datos
-
-El proyecto utiliza Oracle Database.
-
-Entre las tablas utilizadas para almacenar los resultados se encuentran:
+El BFF ATM se ejecuta en:
 
 ```text
-TRANSACCIONES_PROCESADAS
-RESUMEN_TRANSACCIONES_DIARIAS
-
-INTERESES_PROCESADOS
-
-MOVIMIENTOS_ANUALES_PROCESADOS
-ESTADOS_CUENTA_ANUALES
+http://localhost:8083
 ```
 
-## Configuración de conexión
+Está orientado a operaciones específicas de un cajero automático.
 
-La conexión a Oracle utiliza Oracle Wallet.
+### Endpoints
 
-La contraseña de la base de datos y la ubicación del Wallet se configuran mediante variables de entorno para evitar almacenar credenciales directamente en el repositorio.
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/atm/cuentas/{id}/saldo` | Consulta el saldo disponible |
+| POST | `/api/atm/cuentas/{id}/retiro` | Realiza un retiro |
 
-Ejemplo en PowerShell:
+Ejemplo de consulta:
+
+```text
+GET http://localhost:8083/api/atm/cuentas/101/saldo
+```
+
+Ejemplo de retiro:
+
+```json
+{
+    "monto": 100
+}
+```
+
+El cajero recibe únicamente la información necesaria para sus operaciones.
+
+## Personalización por frontend
+
+Cada BFF utiliza el mismo backend principal, pero transforma los datos según las necesidades de su cliente.
+
+```text
+Backend principal
+        │
+        ├── BFF Web
+        │     └── Información completa
+        │
+        ├── BFF Mobile
+        │     └── Información resumida
+        │
+        └── BFF ATM
+              └── Saldo y operaciones de retiro
+```
+
+Esto evita que todos los frontends dependan de una única respuesta general.
+
+## Seguridad
+
+Se implementó autenticación HTTP Basic con Spring Security.
+
+Cada BFF utiliza un usuario y rol independiente:
+
+| BFF | Rol |
+|---|---|
+| Web | `ROLE_WEB` |
+| Mobile | `ROLE_MOBILE` |
+| ATM | `ROLE_ATM` |
+
+Sin credenciales válidas, los endpoints protegidos responden:
+
+```text
+HTTP/1.1 401 Unauthorized
+```
+
+Las contraseñas no se encuentran almacenadas directamente en el código fuente. Se configuran mediante variables de entorno.
+
+## Variables de entorno
+
+### Backend principal
+
+Antes de ejecutar Bank XYZ se deben configurar:
 
 ```powershell
-$env:ORACLE_WALLET_DIR="RUTA_DEL_WALLET"
-$env:BANKXYZ_DB_PASSWORD="CONTRASEÑA"
+$env:ORACLE_WALLET_DIR='RUTA_DEL_ORACLE_WALLET'
+$env:BANKXYZ_DB_PASSWORD='CONTRASEÑA_ORACLE'
+$env:SPRING_BATCH_JOB_ENABLED='false'
 ```
 
-Configuración principal en `application.properties`:
+`ORACLE_WALLET_DIR` debe apuntar a la carpeta descomprimida del Oracle Wallet.
 
-```properties
-spring.datasource.url=jdbc:oracle:thin:@bankxyz_tp
-spring.datasource.username=BANKXYZ_APP
-spring.datasource.password=${BANKXYZ_DB_PASSWORD}
-spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
+### BFF Web
 
-spring.datasource.hikari.data-source-properties[oracle.net.tns_admin]=${ORACLE_WALLET_DIR}
-
-spring.batch.jdbc.initialize-schema=never
-spring.batch.jdbc.isolation-level-for-create=READ_COMMITTED
-
-app.totalRecords=1000
-app.poolSize=3
-app.maxSkipCount=100
+```powershell
+$env:BFF_WEB_USERNAME='web_user'
+$env:BFF_WEB_PASSWORD='CONTRASEÑA_WEB'
 ```
 
-## Selección del Job
+### BFF Mobile
 
-Para ejecutar un Job específico debe modificarse la propiedad:
-
-```properties
-spring.batch.job.name=
+```powershell
+$env:BFF_MOBILE_USERNAME='mobile_user'
+$env:BFF_MOBILE_PASSWORD='CONTRASEÑA_MOBILE'
 ```
 
-### Transacciones diarias
+### BFF ATM
 
-```properties
-spring.batch.job.name=reporteTransaccionesDiariasJob
-```
-
-### Intereses mensuales
-
-```properties
-spring.batch.job.name=calculoInteresesMensualesJob
-```
-
-### Estados de cuenta anuales
-
-```properties
-spring.batch.job.name=estadosCuentaAnualesJob
+```powershell
+$env:BFF_ATM_USERNAME='atm_user'
+$env:BFF_ATM_PASSWORD='CONTRASEÑA_ATM'
 ```
 
 ## Ejecución
 
-Desde la carpeta raíz del proyecto ejecutar:
+Los servicios deben ejecutarse en terminales independientes.
+
+### 1. Backend principal
+
+Desde la raíz del proyecto:
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-Spring Batch ejecutará únicamente el Job seleccionado en `application.properties`.
-
-Una ejecución correcta finaliza con un mensaje similar a:
+Puerto:
 
 ```text
-status: [COMPLETED]
+8080
 ```
 
-seguido por:
+### 2. BFF Web
+
+```powershell
+.\mvnw.cmd -f bff-web\pom.xml spring-boot:run
+```
+
+Puerto:
 
 ```text
-BUILD SUCCESS
+8081
 ```
 
-## Manejo de credenciales
+### 3. BFF Mobile
 
-Las credenciales de Oracle no deben almacenarse directamente dentro del repositorio.
+```powershell
+.\mvnw.cmd -f bff-mobile\pom.xml spring-boot:run
+```
 
-Antes de ejecutar el proyecto se deben configurar las variables de entorno correspondientes al Wallet y a la contraseña de la base de datos.
+Puerto:
 
-## Evidencias
+```text
+8082
+```
 
-Las evidencias de ejecución incluyen:
+### 4. BFF ATM
 
-- Ejecución del Job de transacciones diarias.
-- Resultados generados en Oracle.
-- Ejecución del Job de intereses mensuales.
-- Validación de cálculos de intereses y saldos.
-- Ejecución del Job de estados de cuenta anuales.
-- Resultados consolidados en Oracle.
-- Ejecución paralela mediante tres workers.
+```powershell
+.\mvnw.cmd -f bff-atm\pom.xml spring-boot:run
+```
 
-## Resultado final
+Puerto:
 
-La solución implementa los tres procesos batch solicitados utilizando Spring Batch, incorporando validaciones, tolerancia a fallos, políticas de omisión, reintentos, procesamiento mediante chunks, particionamiento y ejecución multithread.
+```text
+8083
+```
 
-Las pruebas realizadas muestran que la configuración con tres threads mejora el rendimiento del procesamiento manteniendo la consistencia de los resultados generados.
+El backend principal debe estar activo para que los BFF puedan obtener la información de las cuentas.
+
+## Ejemplos de pruebas
+
+### Web
+
+Sin autenticación:
+
+```powershell
+curl.exe -i http://localhost:8081/api/web/cuentas/101
+```
+
+Respuesta esperada:
+
+```text
+401 Unauthorized
+```
+
+Con autenticación:
+
+```powershell
+curl.exe -i -u "web_user:CONTRASEÑA" http://localhost:8081/api/web/cuentas/101
+```
+
+Respuesta esperada:
+
+```text
+200 OK
+```
+
+### Mobile
+
+```powershell
+curl.exe -i -u "mobile_user:CONTRASEÑA" http://localhost:8082/api/mobile/cuentas/101
+```
+
+### ATM - Consulta de saldo
+
+```powershell
+curl.exe -i -u "atm_user:CONTRASEÑA" http://localhost:8083/api/atm/cuentas/101/saldo
+```
+
+### ATM - Retiro
+
+```powershell
+curl.exe -i `
+    -u "atm_user:CONTRASEÑA" `
+    -X POST `
+    "http://localhost:8083/api/atm/cuentas/101/retiro" `
+    -H "Content-Type: application/json" `
+    --data-raw '{\"monto\":100}'
+```
+
+## Conclusión
+
+La implementación permite aplicar el patrón Backend for Frontend en Bank XYZ mediante tres backends especializados.
+
+Cada frontend dispone de endpoints, formato de respuesta y seguridad propios, mientras que el acceso a los datos permanece centralizado en el backend principal.
+
+Con esto se evita sobrecargar a los clientes con información innecesaria y se mantiene separada la lógica específica de Web, Mobile y ATM.
