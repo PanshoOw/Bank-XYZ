@@ -28,6 +28,9 @@ tnsnames.ora
 sqlnet.ora
 ojdbc.properties
 
+# Certificados SSL locales - nunca versionar claves privadas
+**/keystore.p12
+
 # Salidas generadas por versiones anteriores del proyecto
 output/
 
