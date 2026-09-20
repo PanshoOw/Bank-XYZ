@@ -1,229 +1,253 @@
-# Propuesta Técnica
-## Implementación Backend for Frontend - Bank XYZ
+# Propuesta Técnica - Bank XYZ
 
-### 1. Contexto
+## Experiencia 3 - Semana 6
 
-El proyecto Bank XYZ requiere atender tres tipos de clientes con necesidades diferentes:
-
-- Aplicación Web.
-- Aplicación Móvil.
-- Cajero Automático (ATM).
-
-Una única respuesta genérica para los tres canales provocaría transferencia innecesaria de información y aumentaría el acoplamiento entre los clientes y el backend.
-
-Por esta razón se implementa el patrón arquitectónico **Backend for Frontend (BFF)**.
+Proyecto desarrollado para la asignatura **Desarrollo Backend III (PBY2203)**.
 
 ---
 
-## 2. Estrategia seleccionada
+## 1. Contexto
 
-La estrategia seleccionada consiste en implementar un **BFF independiente para cada tipo de cliente**.
+Bank XYZ dispone de un backend principal conectado a Oracle Database y tres Backend for Frontend (BFF) independientes:
 
-La arquitectura queda compuesta por:
+- BFF Web.
+- BFF Mobile.
+- BFF ATM.
+
+Durante esta etapa el proyecto evoluciona hacia una arquitectura distribuida utilizando **Spring Cloud**, incorporando configuración centralizada, descubrimiento de servicios y mecanismos de tolerancia a fallos.
+
+---
+
+## 2. Objetivo de la propuesta
+
+El objetivo es mejorar la integración, mantenibilidad y resiliencia de los servicios mediante:
+
+- Spring Cloud Config.
+- Eureka Service Discovery.
+- Resilience4j.
+- Circuit Breaker y Fallback.
+- Autenticación y autorización mediante JWT.
+- Comunicación HTTPS en los BFF.
+
+---
+
+## 3. Arquitectura propuesta
+
+La solución está compuesta por:
 
 ```text
-                       Oracle Database
-                              │
-                              ▼
-                     Backend principal
-                    http://localhost:8080
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-          BFF Web         BFF Mobile        BFF ATM
-      https://:8081     https://:8082     https://:8083
-              │               │               │
-              ▼               ▼               ▼
-             Web             Móvil           Cajero
+Config Server
+     │
+     ├── BFF Web
+     ├── BFF Mobile
+     └── BFF ATM
+            │
+            ▼
+       Backend Bank XYZ
+            │
+            ▼
+       Oracle Database
+
+Los tres BFF se registran además en Eureka Server.
 ```
 
-Cada BFF es una aplicación Spring Boot independiente, con su propia configuración, endpoints, DTO, lógica de transformación y configuración de seguridad.
+Componentes principales:
 
-El acceso a Oracle permanece centralizado en el backend principal.
-
----
-
-## 3. Justificación
-
-Se seleccionó esta estrategia porque cada canal posee requerimientos diferentes.
-
-### Web
-
-El cliente Web dispone de una interfaz con mayor capacidad para mostrar información detallada.
-
-Su BFF entrega:
-
-- Identificación de la cuenta.
-- Datos del cliente.
-- Tipo de cuenta.
-- Saldo inicial.
-- Tasa de interés.
-- Interés calculado.
-- Saldo actual.
-- Estado.
-
-### Mobile
-
-El cliente Mobile busca reducir el volumen de información transferida.
-
-Su respuesta contiene solamente:
-
-- ID de cuenta.
-- Nombre.
-- Tipo de cuenta.
-- Saldo actual.
-- Estado.
-
-Esto permite disminuir el tamaño de la respuesta y evitar enviar información que la interfaz móvil no necesita.
-
-### ATM
-
-El cajero automático requiere una interfaz reducida y orientada a operaciones concretas.
-
-El BFF ATM expone principalmente:
-
-- Consulta de saldo.
-- Retiro de dinero.
-
-De esta manera no se entrega información adicional innecesaria para la operación de un cajero.
+- **Config Server:** centraliza configuraciones operacionales.
+- **Eureka Server:** mantiene el registro dinámico de los microservicios.
+- **BFF Web:** entrega información completa para clientes web.
+- **BFF Mobile:** entrega información reducida para dispositivos móviles.
+- **BFF ATM:** proporciona operaciones específicas para cajeros automáticos.
+- **Backend principal:** administra el acceso a Oracle Database.
 
 ---
 
-## 4. Optimización por canal
+## 4. Configuración centralizada
 
-Las respuestas fueron diseñadas específicamente para las necesidades de cada cliente.
+Se implementó **Spring Cloud Config Server** para evitar mantener toda la configuración operacional dentro de cada microservicio.
 
-Durante una prueba utilizando la cuenta `101` se obtuvieron los siguientes tamaños:
+Las siguientes propiedades fueron centralizadas:
 
-| Canal | Tamaño |
-|---|---:|
-| Web | 183 bytes |
-| Mobile | 99 bytes |
-| ATM | 57 bytes |
+- Puerto de ejecución.
+- URL del backend principal.
+- Configuración de Eureka.
+- Configuración de Actuator.
+- Parámetros de Resilience4j.
+- Identificación del canal.
+- Issuer JWT.
+- Scope JWT.
+- Tiempo de expiración de tokens.
 
-Respecto de Web:
+Las credenciales, secretos JWT y contraseñas de certificados permanecen fuera del repositorio mediante variables de entorno.
 
-- Mobile transfirió aproximadamente un **45,9 % menos información**.
-- ATM transfirió aproximadamente un **68,9 % menos información**.
-
-También se obtuvieron los siguientes tiempos durante una ejecución de prueba:
-
-| Canal | Tiempo |
-|---|---:|
-| Web | 0.381755 s |
-| Mobile | 0.111764 s |
-| ATM | 0.093577 s |
-
-Los tiempos pueden variar según cada ejecución, por lo que se consideran solamente como referencia.
-
-La principal evidencia de optimización corresponde a la reducción del tamaño de las respuestas mediante DTO específicos por canal.
+Esto permite modificar configuraciones operacionales sin incorporarlas directamente al código fuente de cada BFF.
 
 ---
 
-## 5. Seguridad
+## 5. Service Discovery
 
-Cada BFF posee una configuración de seguridad independiente.
+Se implementó **Netflix Eureka** como servidor de descubrimiento de servicios.
 
-La solución implementa:
+Los siguientes microservicios se registran automáticamente:
+
+```text
+BFF-WEB
+BFF-MOBILE
+BFF-ATM
+```
+
+Eureka mantiene un registro dinámico de las instancias disponibles.
+
+Esto reduce el acoplamiento asociado a la administración manual de ubicaciones de servicios y facilita futuras ampliaciones del ecosistema.
+
+---
+
+## 6. Tolerancia a fallos
+
+Los tres BFF incorporan **Resilience4j** mediante el patrón Circuit Breaker.
+
+Cuando el backend principal funciona correctamente, los BFF entregan los datos reales.
+
+Si el backend deja de responder:
+
+```text
+Solicitud
+    ↓
+BFF
+    ↓
+Circuit Breaker
+    ↓
+Fallback
+    ↓
+Respuesta controlada
+```
+
+El cliente recibe una respuesta indicando que el servicio se encuentra temporalmente no disponible, evitando propagar directamente el fallo del backend.
+
+La configuración utilizada considera:
+
+```yaml
+slidingWindowSize: 4
+minimumNumberOfCalls: 2
+failureRateThreshold: 50
+waitDurationInOpenState: 10s
+```
+
+También se verificó que, una vez restablecido el backend principal, los BFF vuelvan a entregar información real.
+
+---
+
+## 7. Seguridad
+
+Se mantiene la arquitectura de seguridad implementada previamente.
+
+Cada BFF utiliza:
 
 - HTTPS.
-- Certificados SSL/TLS.
-- Keystores PKCS12 independientes.
-- Autenticación mediante credenciales.
-- Tokens JWT.
+- Certificado SSL/TLS independiente.
+- Keystore PKCS12.
+- Spring Security.
+- JWT.
 - Firma HMAC SHA-256.
-- Autorización específica por canal.
-- APIs sin estado mediante `STATELESS`.
-- Variables de entorno para contraseñas y secretos.
+- Autorización mediante scopes.
+- Sesiones stateless.
+- Variables de entorno para secretos.
 
-Los permisos se diferencian mediante scopes:
-
-| Canal | Scope |
-|---|---|
-| Web | `WEB` |
-| Mobile | `MOBILE` |
-| ATM | `ATM` |
-
-Estos scopes se validan como:
+Scopes utilizados:
 
 ```text
-SCOPE_WEB
-SCOPE_MOBILE
-SCOPE_ATM
+Web    → WEB
+Mobile → MOBILE
+ATM    → ATM
 ```
 
-Cada BFF expone:
+Una solicitud sin autenticación válida recibe:
 
 ```text
-POST /auth/token
+401 Unauthorized
 ```
 
-para generar un JWT después de validar las credenciales.
-
-Posteriormente las solicitudes protegidas deben incluir:
-
-```text
-Authorization: Bearer TOKEN_JWT
-```
-
-Una solicitud sin token o con un token inválido es rechazada con:
-
-```text
-HTTP 401 Unauthorized
-```
-
-Los certificados utilizados durante el desarrollo son autofirmados y destinados exclusivamente al entorno local.
+Mientras que un JWT válido y autorizado permite acceder al recurso correspondiente.
 
 ---
 
-## 6. Modularidad y escalabilidad
+## 8. Resiliencia
 
-La separación de los tres BFF permite modificar un canal sin alterar directamente los otros.
+La incorporación de Circuit Breaker y Fallback permite que una caída del backend principal no genere una interrupción descontrolada en los BFF.
 
-Cada aplicación mantiene una estructura organizada mediante:
+Durante las pruebas se verificó:
 
 ```text
-config/
-controller/
-dto/
-service/
+Backend disponible
+→ Datos reales
+
+Backend no disponible
+→ Fallback
+
+Backend restablecido
+→ Datos reales nuevamente
 ```
 
-Esto permite:
-
-- incorporar nuevos endpoints;
-- modificar respuestas de un canal;
-- agregar nuevas reglas de autorización;
-- evolucionar cada BFF independientemente;
-- incorporar nuevos clientes en el futuro.
-
-Por ejemplo, un nuevo canal podría agregarse mediante un nuevo BFF sin modificar las respuestas existentes de Web, Mobile o ATM.
+Esto permite que el sistema maneje fallos de manera controlada y mejore su capacidad de recuperación.
 
 ---
 
-## 7. Ventajas de la propuesta
+## 9. Escalabilidad
 
-La estrategia seleccionada entrega las siguientes ventajas:
+La arquitectura separa responsabilidades entre los distintos componentes:
 
-- Respuestas específicas para cada frontend.
-- Reducción de información innecesaria.
-- Separación de responsabilidades.
-- Seguridad diferenciada por canal.
-- Mejor mantenibilidad.
-- Escalabilidad independiente.
-- Menor acoplamiento entre los clientes y el backend principal.
+```text
+Configuración      → Config Server
+Descubrimiento     → Eureka Server
+Canal Web          → BFF Web
+Canal Mobile       → BFF Mobile
+Canal ATM          → BFF ATM
+Persistencia       → Backend Bank XYZ / Oracle
+Resiliencia        → Resilience4j
+Seguridad          → Spring Security + JWT
+```
 
-Como desventaja, mantener tres aplicaciones independientes aumenta la cantidad de configuraciones y componentes que deben administrarse.
-
-Sin embargo, para este proyecto la separación resulta adecuada debido a las diferencias existentes entre Web, Mobile y ATM.
+Esta separación permite incorporar nuevos microservicios o nuevas instancias sin modificar significativamente los servicios existentes.
 
 ---
 
-## 8. Conclusión
+## 10. Ventajas
 
-La propuesta implementa el patrón Backend for Frontend mediante tres backends independientes orientados a Web, Mobile y ATM.
+La solución proporciona:
 
-Cada BFF entrega información optimizada para su cliente y protege sus endpoints mediante HTTPS, certificados SSL/TLS, autenticación, autorización y tokens JWT.
+- Configuración centralizada.
+- Servicios independientes.
+- Descubrimiento dinámico.
+- Mejor tolerancia a fallos.
+- Respuestas controladas ante indisponibilidad.
+- Seguridad específica por canal.
+- Mayor capacidad de mantenimiento.
+- Arquitectura preparada para futuras ampliaciones.
 
-La solución conserva el acceso a datos en el backend principal y separa la lógica específica de cada frontend, obteniendo una arquitectura modular, segura y preparada para futuras extensiones.
+---
+
+## 11. Consideraciones
+
+Actualmente los BFF consumen el backend principal utilizando una URL configurada centralmente mediante Config Server.
+
+La arquitectura permite que, en futuras evoluciones, el backend principal también sea registrado como servicio en Eureka y pueda ser localizado mediante Service Discovery.
+
+Además, el proyecto incluye dependencias que permiten futuras ampliaciones con mecanismos como Load Balancer, Rate Limiter y Bulkhead.
+
+Estas funcionalidades no forman parte de la implementación activa de esta etapa.
+
+---
+
+## 12. Conclusión
+
+La incorporación de Spring Cloud permite evolucionar Bank XYZ desde una arquitectura basada únicamente en BFF hacia un ecosistema distribuido con configuración centralizada y descubrimiento de servicios.
+
+Config Server permite administrar configuraciones operacionales desde un punto central.
+
+Eureka registra dinámicamente los tres BFF.
+
+Resilience4j permite gestionar fallos mediante Circuit Breaker y Fallback.
+
+Finalmente, la solución mantiene los mecanismos de seguridad mediante HTTPS, JWT y autorización específica por canal.
+
+Con estas modificaciones, Bank XYZ cuenta con una arquitectura más resiliente, modular, configurable y preparada para futuras extensiones.
