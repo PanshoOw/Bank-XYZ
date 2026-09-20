@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: bff-mobile
+  config:
+    import: optional:configserver:http://localhost:8888

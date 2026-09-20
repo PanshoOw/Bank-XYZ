@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: bff-atm
+  config:
+    import: optional:configserver:http://localhost:8888
