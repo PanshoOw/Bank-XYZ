@@ -58,6 +58,12 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Apache Kafka con autoconfiguración de Spring Boot -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>

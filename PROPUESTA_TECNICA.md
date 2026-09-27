@@ -1,253 +1,519 @@
-# Propuesta Técnica - Bank XYZ
-
-## Experiencia 3 - Semana 6
-
-Proyecto desarrollado para la asignatura **Desarrollo Backend III (PBY2203)**.
-
----
+# Propuesta Técnica – Bank XYZ
 
 ## 1. Contexto
 
-Bank XYZ dispone de un backend principal conectado a Oracle Database y tres Backend for Frontend (BFF) independientes:
+Bank XYZ corresponde a un sistema backend bancario desarrollado de forma incremental para la asignatura **Desarrollo Backend III (PBY2203)**.
 
-- BFF Web.
-- BFF Mobile.
-- BFF ATM.
+En etapas anteriores se implementó una arquitectura basada en **Backend for Frontend (BFF)**, separando las necesidades de los canales Web, Mobile y ATM. Posteriormente se incorporaron componentes de Spring Cloud, seguridad mediante HTTPS y JWT, configuración centralizada y mecanismos de tolerancia a fallos.
 
-Durante esta etapa el proyecto evoluciona hacia una arquitectura distribuida utilizando **Spring Cloud**, incorporando configuración centralizada, descubrimiento de servicios y mecanismos de tolerancia a fallos.
+Para la Semana 7, la solución evoluciona incorporando una **arquitectura orientada a eventos**, con el propósito de desacoplar procesos derivados de las operaciones bancarias y habilitar procesamiento asíncrono y concurrente.
+
+La actividad solicita definir una arquitectura de eventos, representarla mediante un diagrama, implementar tolerancia a fallos con Resilience4j e integrar Kafka o JMS de manera funcional y escalable. :contentReference[oaicite:1]{index=1}
 
 ---
 
 ## 2. Objetivo de la propuesta
 
-El objetivo es mejorar la integración, mantenibilidad y resiliencia de los servicios mediante:
+La propuesta busca fortalecer Bank XYZ mediante una arquitectura que combine:
 
-- Spring Cloud Config.
-- Eureka Service Discovery.
-- Resilience4j.
-- Circuit Breaker y Fallback.
-- Autenticación y autorización mediante JWT.
-- Comunicación HTTPS en los BFF.
+- Separación de responsabilidades entre canales.
+- Configuración centralizada.
+- Registro y descubrimiento de servicios.
+- Seguridad en las comunicaciones.
+- Tolerancia a fallos.
+- Procesamiento asíncrono de eventos.
+- Capacidad de procesamiento concurrente.
+- Preparación para futuras extensiones del sistema.
+
+La solución mantiene Oracle Database como fuente del estado bancario e incorpora Apache Kafka como plataforma de distribución de eventos.
 
 ---
 
 ## 3. Arquitectura propuesta
 
-La solución está compuesta por:
+La solución se estructura mediante los siguientes componentes principales:
 
 ```text
-Config Server
-     │
-     ├── BFF Web
-     ├── BFF Mobile
-     └── BFF ATM
-            │
-            ▼
-       Backend Bank XYZ
-            │
-            ▼
-       Oracle Database
-
-Los tres BFF se registran además en Eureka Server.
+Clientes
+   │
+   ▼
+BFF Web / Mobile / ATM
+   │
+   ▼
+Backend Bank XYZ
+   │
+   ├──────────────▶ Oracle Database
+   │
+   └──────────────▶ Apache Kafka
+                           │
+                           ▼
+                     Consumer Group
+                           │
+                           ▼
+                     Auditoría en log
 ```
 
-Componentes principales:
+Complementariamente se utilizan:
 
-- **Config Server:** centraliza configuraciones operacionales.
-- **Eureka Server:** mantiene el registro dinámico de los microservicios.
-- **BFF Web:** entrega información completa para clientes web.
-- **BFF Mobile:** entrega información reducida para dispositivos móviles.
-- **BFF ATM:** proporciona operaciones específicas para cajeros automáticos.
-- **Backend principal:** administra el acceso a Oracle Database.
+```text
+Spring Cloud Config
+        +
+Eureka Discovery Server
+        +
+Resilience4j
+        +
+HTTPS / JWT
+```
+
+El diagrama detallado de la solución se encuentra documentado en:
+
+```text
+Arquitectura_Eventos_BankXYZ.drawio
+Arquitectura_Eventos_BankXYZ.png
+```
 
 ---
 
-## 4. Configuración centralizada
+## 4. Decisión arquitectónica: Event-Driven Architecture
 
-Se implementó **Spring Cloud Config Server** para evitar mantener toda la configuración operacional dentro de cada microservicio.
+Para esta etapa se seleccionó una **arquitectura orientada a eventos (Event-Driven Architecture)** basada en el modelo:
 
-Las siguientes propiedades fueron centralizadas:
+```text
+Producer → Topic → Consumer
+```
 
-- Puerto de ejecución.
-- URL del backend principal.
-- Configuración de Eureka.
-- Configuración de Actuator.
-- Parámetros de Resilience4j.
-- Identificación del canal.
-- Issuer JWT.
-- Scope JWT.
-- Tiempo de expiración de tokens.
+La decisión responde a la necesidad de desacoplar la operación bancaria principal de procesos que pueden ejecutarse posteriormente de forma asíncrona.
 
-Las credenciales, secretos JWT y contraseñas de certificados permanecen fuera del repositorio mediante variables de entorno.
+En una operación de retiro, el proceso principal mantiene la responsabilidad de:
 
-Esto permite modificar configuraciones operacionales sin incorporarlas directamente al código fuente de cada BFF.
+1. Validar la solicitud.
+2. Actualizar el saldo.
+3. Persistir el nuevo estado en Oracle.
+
+Una vez finalizada correctamente la operación, se genera un evento que representa el hecho ocurrido.
+
+```text
+Retiro realizado
+      │
+      ▼
+RetiroRealizadoEvent
+      │
+      ▼
+Apache Kafka
+      │
+      ▼
+Procesamiento asíncrono
+```
+
+Este enfoque evita incorporar directamente nuevas responsabilidades dentro de la lógica transaccional del retiro.
 
 ---
 
-## 5. Service Discovery
+## 5. Elección de Apache Kafka
 
-Se implementó **Netflix Eureka** como servidor de descubrimiento de servicios.
+Se seleccionó **Apache Kafka** como plataforma de mensajería asíncrona.
 
-Los siguientes microservicios se registran automáticamente:
+Kafka resulta adecuado para la solución debido a que proporciona:
 
-```text
-BFF-WEB
-BFF-MOBILE
-BFF-ATM
-```
+- Desacoplamiento entre productor y consumidor.
+- Persistencia temporal de eventos.
+- Organización mediante tópicos.
+- Particionamiento.
+- Procesamiento concurrente.
+- Posibilidad de incorporar nuevos consumidores en futuras etapas.
 
-Eureka mantiene un registro dinámico de las instancias disponibles.
-
-Esto reduce el acoplamiento asociado a la administración manual de ubicaciones de servicios y facilita futuras ampliaciones del ecosistema.
-
----
-
-## 6. Tolerancia a fallos
-
-Los tres BFF incorporan **Resilience4j** mediante el patrón Circuit Breaker.
-
-Cuando el backend principal funciona correctamente, los BFF entregan los datos reales.
-
-Si el backend deja de responder:
-
-```text
-Solicitud
-    ↓
-BFF
-    ↓
-Circuit Breaker
-    ↓
-Fallback
-    ↓
-Respuesta controlada
-```
-
-El cliente recibe una respuesta indicando que el servicio se encuentra temporalmente no disponible, evitando propagar directamente el fallo del backend.
-
-La configuración utilizada considera:
-
-```yaml
-slidingWindowSize: 4
-minimumNumberOfCalls: 2
-failureRateThreshold: 50
-waitDurationInOpenState: 10s
-```
-
-También se verificó que, una vez restablecido el backend principal, los BFF vuelvan a entregar información real.
+En el entorno de desarrollo Kafka se ejecuta mediante Docker y utiliza un único broker.
 
 ---
 
-## 7. Seguridad
+## 6. Diseño de tópicos
 
-Se mantiene la arquitectura de seguridad implementada previamente.
+La arquitectura contempla tres eventos bancarios principales:
 
-Cada BFF utiliza:
+| Tópico | Estado |
+|---|---|
+| `retiro-realizado` | Implementado |
+| `deposito-realizado` | Preparado |
+| `transferencia-realizada` | Preparado |
 
-- HTTPS.
-- Certificado SSL/TLS independiente.
-- Keystore PKCS12.
-- Spring Security.
-- JWT.
-- Firma HMAC SHA-256.
-- Autorización mediante scopes.
-- Sesiones stateless.
-- Variables de entorno para secretos.
-
-Scopes utilizados:
+Los tres tópicos poseen:
 
 ```text
-Web    → WEB
-Mobile → MOBILE
-ATM    → ATM
+3 particiones
+Replication Factor: 1
 ```
 
-Una solicitud sin autenticación válida recibe:
+El factor de replicación se mantiene en `1` porque el entorno académico utiliza un único broker Kafka.
 
-```text
-401 Unauthorized
-```
+Durante esta etapa sólo `retiro-realizado` posee un flujo funcional completo de productor y consumidor.
 
-Mientras que un JWT válido y autorizado permite acceder al recurso correspondiente.
+Los otros dos tópicos fueron definidos como preparación para la evolución posterior del sistema.
 
 ---
 
-## 8. Resiliencia
+## 7. Evento implementado
 
-La incorporación de Circuit Breaker y Fallback permite que una caída del backend principal no genere una interrupción descontrolada en los BFF.
+El evento utilizado para representar un retiro correctamente procesado corresponde a:
 
-Durante las pruebas se verificó:
+```text
+RetiroRealizadoEvent
+```
+
+Su contrato contiene:
+
+```text
+cuentaId
+monto
+saldoDisponible
+fechaHora
+```
+
+El evento no intenta representar el estado completo de la cuenta, sino únicamente la información necesaria para comunicar que el retiro ocurrió correctamente.
+
+La clave utilizada al publicar en Kafka corresponde a:
+
+```text
+cuentaId.toString()
+```
+
+El uso del identificador de cuenta como clave permite mantener una estrategia de particionado consistente para eventos relacionados con una misma cuenta.
+
+---
+
+## 8. Flujo de procesamiento
+
+El flujo implementado corresponde a:
+
+```text
+Solicitud de retiro
+        │
+        ▼
+CuentaController
+        │
+        ▼
+CuentaService
+        │
+        ├──── Validaciones
+        │
+        ▼
+CuentaRepository
+        │
+        ▼
+Oracle Database
+        │
+        ▼
+Saldo actualizado
+        │
+        ▼
+RetiroRealizadoEvent
+        │
+        ▼
+RetiroEventProducer
+        │
+        ▼
+retiro-realizado
+        │
+        ▼
+RetiroEventConsumer
+        │
+        ▼
+Registro de auditoría
+```
+
+La publicación del evento ocurre después de procesar satisfactoriamente la actualización de la cuenta.
+
+Esto evita generar eventos de retiro para operaciones rechazadas por las validaciones de negocio.
+
+---
+
+## 9. Estrategia de consumo y escalabilidad
+
+El tópico `retiro-realizado` posee tres particiones.
+
+El consumidor pertenece al grupo:
+
+```text
+auditoria-bankxyz
+```
+
+y está configurado con:
+
+```text
+concurrency = 3
+```
+
+La relación conceptual es:
+
+```text
+retiro-realizado
+ ┌────┬────┬────┐
+ P0   P1   P2
+ └────┴────┴────┘
+        │
+        ▼
+auditoria-bankxyz
+        │
+ ┌──────┼──────┐
+ C1     C2     C3
+```
+
+Los tres consumidores corresponden a ejecución concurrente del mismo listener y no a tres microservicios independientes.
+
+Esta configuración permite distribuir el trabajo entre las particiones disponibles y demostrar procesamiento paralelo de eventos.
+
+---
+
+## 10. Tolerancia a fallos
+
+Los BFF implementan tolerancia a fallos mediante **Resilience4j Circuit Breaker**.
+
+La configuración utilizada contempla:
+
+```text
+Sliding Window Size:       4
+Minimum Number of Calls:   2
+Failure Rate Threshold:   50 %
+Wait Duration Open State: 10 segundos
+```
+
+El objetivo es evitar que una dependencia no disponible provoque fallos sin controlar hacia los clientes.
+
+Cuando el backend principal presenta una indisponibilidad, el BFF ejecuta una respuesta fallback.
+
+Ejemplo:
+
+```text
+TEMPORALMENTE_NO_DISPONIBLE
+```
+
+Durante las pruebas se verificaron ambos estados:
 
 ```text
 Backend disponible
-→ Datos reales
-
-Backend no disponible
-→ Fallback
-
-Backend restablecido
-→ Datos reales nuevamente
+        ↓
+Datos reales
 ```
 
-Esto permite que el sistema maneje fallos de manera controlada y mejore su capacidad de recuperación.
-
----
-
-## 9. Escalabilidad
-
-La arquitectura separa responsabilidades entre los distintos componentes:
+y:
 
 ```text
-Configuración      → Config Server
-Descubrimiento     → Eureka Server
-Canal Web          → BFF Web
-Canal Mobile       → BFF Mobile
-Canal ATM          → BFF ATM
-Persistencia       → Backend Bank XYZ / Oracle
-Resiliencia        → Resilience4j
-Seguridad          → Spring Security + JWT
+Backend no disponible
+        ↓
+Resilience4j
+        ↓
+Fallback controlado
 ```
 
-Esta separación permite incorporar nuevos microservicios o nuevas instancias sin modificar significativamente los servicios existentes.
+De esta manera, la resiliencia se mantiene separada de la lógica de negocio bancaria.
 
 ---
 
-## 10. Ventajas
+## 11. Persistencia y Event Sourcing
 
-La solución proporciona:
+Oracle Database continúa siendo la **fuente de verdad del estado actual de las cuentas**.
 
-- Configuración centralizada.
-- Servicios independientes.
-- Descubrimiento dinámico.
-- Mejor tolerancia a fallos.
-- Respuestas controladas ante indisponibilidad.
-- Seguridad específica por canal.
-- Mayor capacidad de mantenimiento.
-- Arquitectura preparada para futuras ampliaciones.
+Kafka se utiliza para comunicar hechos ocurridos después de las operaciones bancarias.
+
+Por esta razón, la solución implementada **no corresponde a Event Sourcing completo**.
+
+En esta arquitectura:
+
+```text
+Oracle
+   │
+   └── Estado actual de la cuenta
+
+Kafka
+   │
+   └── Eventos derivados de operaciones
+```
+
+El saldo no se reconstruye leyendo el historial de Kafka.
+
+Esta distinción permite utilizar los beneficios de una arquitectura orientada a eventos sin reemplazar el modelo de persistencia actualmente implementado.
 
 ---
 
-## 11. Consideraciones
+## 12. Seguridad y configuración
 
-Actualmente los BFF consumen el backend principal utilizando una URL configurada centralmente mediante Config Server.
+La incorporación de Kafka mantiene los mecanismos de seguridad desarrollados previamente.
 
-La arquitectura permite que, en futuras evoluciones, el backend principal también sea registrado como servicio en Eureka y pueda ser localizado mediante Service Discovery.
+Los BFF utilizan:
 
-Además, el proyecto incluye dependencias que permiten futuras ampliaciones con mecanismos como Load Balancer, Rate Limiter y Bulkhead.
+- HTTPS.
+- JWT.
+- Scopes por canal.
+- Sesiones stateless.
+- Secretos almacenados mediante variables de entorno.
 
-Estas funcionalidades no forman parte de la implementación activa de esta etapa.
+Los canales se mantienen separados mediante:
+
+```text
+WEB
+MOBILE
+ATM
+```
+
+Spring Cloud Config centraliza parámetros operativos de los BFF y Eureka proporciona registro y visualización de los servicios disponibles.
+
+Estas capacidades permanecen independientes de la arquitectura Kafka.
 
 ---
 
-## 12. Conclusión
+## 13. Decisiones de alcance
 
-La incorporación de Spring Cloud permite evolucionar Bank XYZ desde una arquitectura basada únicamente en BFF hacia un ecosistema distribuido con configuración centralizada y descubrimiento de servicios.
+Para mantener una implementación proporcional al alcance académico de esta etapa se definieron las siguientes decisiones:
 
-Config Server permite administrar configuraciones operacionales desde un punto central.
+### Auditoría mediante logs
 
-Eureka registra dinámicamente los tres BFF.
+El evento consumido se registra mediante el sistema de logs de la aplicación.
 
-Resilience4j permite gestionar fallos mediante Circuit Breaker y Fallback.
+Actualmente no existe una base de datos de auditoría independiente.
 
-Finalmente, la solución mantiene los mecanismos de seguridad mediante HTTPS, JWT y autorización específica por canal.
+### Un solo evento funcional
 
-Con estas modificaciones, Bank XYZ cuenta con una arquitectura más resiliente, modular, configurable y preparada para futuras extensiones.
+Se implementó completamente:
+
+```text
+retiro-realizado
+```
+
+Los eventos de depósito y transferencia permanecen preparados para futuras etapas.
+
+### Broker único
+
+El entorno local utiliza un solo broker Kafka.
+
+Por ello no se busca demostrar alta disponibilidad del cluster, sino:
+
+- creación de tópicos;
+- particionado;
+- publicación;
+- consumo;
+- concurrencia.
+
+---
+
+## 14. Limitaciones técnicas
+
+### Consistencia entre Oracle y Kafka
+
+La actualización de Oracle y la publicación del evento Kafka son operaciones independientes.
+
+Actualmente el flujo corresponde conceptualmente a:
+
+```text
+Actualizar Oracle
+      │
+      ▼
+Publicar Kafka
+```
+
+Esto implica que, ante una falla excepcional ocurrida entre ambas operaciones, podría actualizarse correctamente Oracle sin llegar a publicarse el evento.
+
+Para el alcance actual esta condición se considera aceptable.
+
+En una solución productiva debería utilizarse un patrón especializado para resolver esta consistencia.
+
+---
+
+### Persistencia de auditoría
+
+Los eventos procesados se registran únicamente mediante logs.
+
+Una futura evolución podría almacenarlos en un repositorio específico de auditoría.
+
+---
+
+### Alta disponibilidad Kafka
+
+El entorno posee:
+
+```text
+1 broker
+Replication Factor = 1
+```
+
+Un ambiente productivo debería utilizar múltiples brokers y un factor de replicación mayor.
+
+---
+
+## 15. Evolución propuesta
+
+La arquitectura implementada permite continuar evolucionando sin modificar significativamente la lógica del retiro.
+
+Entre las extensiones posibles se encuentran:
+
+```text
+retiro-realizado
+        │
+        ├── Auditoría
+        ├── Notificaciones
+        ├── Monitoreo
+        ├── Prevención de fraude
+        └── Analítica
+```
+
+También pueden incorporarse los flujos:
+
+```text
+deposito-realizado
+transferencia-realizada
+```
+
+mediante sus respectivos producers y consumers.
+
+---
+
+### Transactional Outbox
+
+Una evolución relevante para un escenario productivo sería implementar el patrón **Transactional Outbox**.
+
+La idea sería almacenar el evento dentro de la misma transacción que modifica el estado bancario:
+
+```text
+Transacción Oracle
+   │
+   ├── Actualización cuenta
+   └── Registro evento pendiente
+```
+
+Posteriormente otro proceso publicaría el evento hacia Kafka.
+
+Esto reduciría el riesgo de inconsistencia entre la actualización de Oracle y la publicación del mensaje.
+
+Esta funcionalidad se plantea únicamente como evolución futura y no forma parte de la implementación actual.
+
+---
+
+## 16. Evaluación de la propuesta
+
+La solución implementada permite demostrar:
+
+- Arquitectura orientada a eventos.
+- Definición explícita de tópicos.
+- Representación de mensajes y eventos.
+- Producer Kafka funcional.
+- Consumer Kafka funcional.
+- Procesamiento asíncrono.
+- Tres particiones.
+- Tres consumidores concurrentes.
+- Tolerancia a fallos mediante Resilience4j.
+- Respuesta fallback ante indisponibilidad.
+- Integración con la arquitectura BFF existente.
+
+Las evidencias de ejecución y el diagrama permiten verificar estos componentes de forma independiente.
+
+---
+
+## 17. Conclusión
+
+La incorporación de Apache Kafka permite que Bank XYZ evolucione desde una arquitectura basada principalmente en comunicaciones síncronas hacia una solución que combina procesamiento síncrono y asíncrono.
+
+Oracle mantiene la responsabilidad sobre el estado bancario, mientras Kafka distribuye eventos derivados de las operaciones realizadas.
+
+El modelo `Producer → Topic → Consumer` permite desacoplar responsabilidades y facilita futuras extensiones sin incorporar nuevas dependencias directamente en el flujo principal del retiro.
+
+El uso de tres particiones y tres consumidores concurrentes permite demostrar capacidad de procesamiento paralelo, mientras Resilience4j proporciona tolerancia a fallos en las comunicaciones entre los BFF y el backend principal.
+
+La arquitectura resultante mantiene las capacidades implementadas previamente —BFF, seguridad, configuración centralizada y descubrimiento de servicios— e incorpora una base orientada a eventos preparada para continuar evolucionando durante las siguientes etapas del proyecto.
