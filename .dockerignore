@@ -1,0 +1,17 @@
+target/
+.git/
+.vscode/
+.idea/
+*.log
+
+# Servicios independientes: cada uno tiene su propia imagen
+bff-web/
+bff-mobile/
+bff-atm/
+config-server/
+discovery-server/
+auth-server/
+
+# No incluir secretos ni Wallet de Oracle
+**/keystore*.p12
+**/Wallet*/

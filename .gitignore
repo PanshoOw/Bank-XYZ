@@ -39,4 +39,9 @@ evidencias/
 
 # Archivos temporales de autenticación
 auth-web.json
-auth-*.json
+auth-*.jsontoken-response.json
+actuator-response.txt
+retiro.json
+**/keystore*.p12
+**/Wallet*/
+!/.env.example

@@ -1,352 +1,164 @@
-# Propuesta Técnica – Bank XYZ
+﻿# PROPUESTA TÃ‰CNICA
+## Bank XYZ - Arquitectura de microservicios segura, resiliente y orientada a eventos
 
-## 1. Contexto
+**Asignatura:** Desarrollo Backend III - PBY2203
+**Proyecto:** Bank XYZ
+**Actividad:** Experiencia 3 - Semana 8
+**Tema:** Desarrollo de microservicios y resiliencia en la nube con Spring Cloud
 
-Bank XYZ corresponde a un sistema backend bancario desarrollado de forma incremental para la asignatura **Desarrollo Backend III (PBY2203)**.
+---
 
-En etapas anteriores se implementó una arquitectura basada en **Backend for Frontend (BFF)**, separando las necesidades de los canales Web, Mobile y ATM. Posteriormente se incorporaron componentes de Spring Cloud, seguridad mediante HTTPS y JWT, configuración centralizada y mecanismos de tolerancia a fallos.
+## 1. IntroducciÃ³n
 
-Para la Semana 7, la solución evoluciona incorporando una **arquitectura orientada a eventos**, con el propósito de desacoplar procesos derivados de las operaciones bancarias y habilitar procesamiento asíncrono y concurrente.
+La presente propuesta tÃ©cnica describe la evoluciÃ³n de la soluciÃ³n Bank XYZ hacia una arquitectura distribuida preparada para operar en un entorno cloud, incorporando mecanismos de seguridad, resiliencia, mensajerÃ­a asÃ­ncrona y contenerizaciÃ³n.
 
-La actividad solicita definir una arquitectura de eventos, representarla mediante un diagrama, implementar tolerancia a fallos con Resilience4j e integrar Kafka o JMS de manera funcional y escalable. :contentReference[oaicite:1]{index=1}
+La soluciÃ³n se construye sobre una arquitectura de microservicios desarrollada con Spring Boot y Spring Cloud, complementada mediante:
+
+- Spring Authorization Server.
+- OAuth 2.0.
+- JSON Web Token (JWT).
+- Spring Security.
+- Spring Cloud Config.
+- Eureka Service Discovery.
+- Resilience4j.
+- Apache Kafka.
+- Docker.
+- Docker Compose.
+- Oracle Autonomous Database.
+
+La propuesta busca reducir el acoplamiento entre componentes, mejorar la tolerancia a fallos, centralizar aspectos de configuraciÃ³n y seguridad, y permitir el despliegue coordinado de los distintos servicios de Bank XYZ.
 
 ---
 
 ## 2. Objetivo de la propuesta
 
-La propuesta busca fortalecer Bank XYZ mediante una arquitectura que combine:
+El objetivo principal es disponer de una arquitectura backend distribuida que pueda mantener caracterÃ­sticas de seguridad, disponibilidad y escalabilidad ante escenarios propios de un sistema bancario.
 
-- Separación de responsabilidades entre canales.
-- Configuración centralizada.
-- Registro y descubrimiento de servicios.
-- Seguridad en las comunicaciones.
-- Tolerancia a fallos.
-- Procesamiento asíncrono de eventos.
-- Capacidad de procesamiento concurrente.
-- Preparación para futuras extensiones del sistema.
+Para ello se propone:
 
-La solución mantiene Oracle Database como fuente del estado bancario e incorpora Apache Kafka como plataforma de distribución de eventos.
+1. Centralizar la autenticaciÃ³n mediante un Authorization Server independiente.
+2. Proteger los servicios BFF mediante OAuth 2.0 y JWT.
+3. Aplicar autorizaciÃ³n diferenciada por tipo de cliente mediante scopes.
+4. Mantener una configuraciÃ³n centralizada mediante Spring Cloud Config.
+5. Registrar y descubrir servicios mediante Eureka.
+6. Incorporar tolerancia a fallos mediante Resilience4j.
+7. Procesar eventos bancarios de manera asÃ­ncrona mediante Kafka.
+8. Ejecutar los componentes dentro de contenedores Docker.
+9. Orquestar la soluciÃ³n completa mediante Docker Compose.
+10. Mantener las credenciales y recursos sensibles fuera del cÃ³digo fuente.
 
 ---
 
 ## 3. Arquitectura propuesta
 
-La solución se estructura mediante los siguientes componentes principales:
+La soluciÃ³n estÃ¡ compuesta por los siguientes componentes:
+
+| Componente | Puerto | Responsabilidad |
+|---|---:|---|
+| Backend Bank XYZ | 8080 | LÃ³gica bancaria, persistencia y publicaciÃ³n de eventos |
+| BFF Web | 8081 | AtenciÃ³n de solicitudes del canal Web |
+| BFF Mobile | 8082 | AtenciÃ³n de solicitudes del canal Mobile |
+| BFF ATM | 8083 | Operaciones propias de cajeros automÃ¡ticos |
+| Discovery Server | 8761 | Registro y descubrimiento de servicios |
+| Config Server | 8888 | ConfiguraciÃ³n centralizada |
+| Authorization Server | 9000 | AutenticaciÃ³n OAuth 2.0 y emisiÃ³n de JWT |
+| Apache Kafka | 9092 / 29092 | MensajerÃ­a asÃ­ncrona |
+
+La arquitectura general puede representarse de la siguiente forma:
 
 ```text
-Clientes
-   │
-   ▼
-BFF Web / Mobile / ATM
-   │
-   ▼
-Backend Bank XYZ
-   │
-   ├──────────────▶ Oracle Database
-   │
-   └──────────────▶ Apache Kafka
-                           │
-                           ▼
-                     Consumer Group
-                           │
-                           ▼
-                     Auditoría en log
+                       +----------------------+
+                       | Authorization Server |
+                       |      OAuth 2.0       |
+                       |      Puerto 9000     |
+                       +----------+-----------+
+                                  |
+                           JWT + Scopes
+                                  |
+               +------------------+------------------+
+               |                  |                  |
+               v                  v                  v
+        +-------------+    +-------------+    +-------------+
+        |   BFF Web   |    | BFF Mobile  |    |   BFF ATM   |
+        | HTTPS 8081  |    | HTTPS 8082  |    | HTTPS 8083  |
+        +------+------+    +------+------+    +------+------+
+               |                  |                  |
+               +------------------+------------------+
+                                  |
+                                  v
+                        +------------------+
+                        | Backend Bank XYZ |
+                        |    Puerto 8080   |
+                        +--------+---------+
+                                 |
+                    +------------+-------------+
+                    |                          |
+                    v                          v
+        +----------------------+      +------------------+
+        | Oracle Autonomous DB |      |   Apache Kafka   |
+        +----------------------+      +---------+--------+
+                                               |
+                                               v
+                                     +-------------------+
+                                     | Consumer AuditorÃ­a|
+                                     +-------------------+
 ```
 
-Complementariamente se utilizan:
+De manera complementaria:
 
 ```text
-Spring Cloud Config
-        +
-Eureka Discovery Server
-        +
-Resilience4j
-        +
-HTTPS / JWT
-```
-
-El diagrama detallado de la solución se encuentra documentado en:
-
-```text
-Arquitectura_Eventos_BankXYZ.drawio
-Arquitectura_Eventos_BankXYZ.png
+Config Server  <---- configuraciÃ³n centralizada
+Discovery      <---- registro de servicios
+Docker Compose <---- orquestaciÃ³n completa
 ```
 
 ---
 
-## 4. Decisión arquitectónica: Event-Driven Architecture
+## 4. PatrÃ³n Backend for Frontend
 
-Para esta etapa se seleccionó una **arquitectura orientada a eventos (Event-Driven Architecture)** basada en el modelo:
+Se mantiene el patrÃ³n Backend for Frontend debido a que Bank XYZ dispone de distintos tipos de clientes con necesidades diferentes.
 
-```text
-Producer → Topic → Consumer
-```
+### BFF Web
 
-La decisión responde a la necesidad de desacoplar la operación bancaria principal de procesos que pueden ejecutarse posteriormente de forma asíncrona.
+EstÃ¡ orientado a clientes Web y puede entregar representaciones mÃ¡s completas de los datos.
 
-En una operación de retiro, el proceso principal mantiene la responsabilidad de:
+### BFF Mobile
 
-1. Validar la solicitud.
-2. Actualizar el saldo.
-3. Persistir el nuevo estado en Oracle.
+EstÃ¡ orientado a dispositivos mÃ³viles, permitiendo mantener una interfaz especializada para ese tipo de consumo.
 
-Una vez finalizada correctamente la operación, se genera un evento que representa el hecho ocurrido.
+### BFF ATM
 
-```text
-Retiro realizado
-      │
-      ▼
-RetiroRealizadoEvent
-      │
-      ▼
-Apache Kafka
-      │
-      ▼
-Procesamiento asíncrono
-```
+EstÃ¡ orientado a operaciones de cajeros automÃ¡ticos, particularmente operaciones sensibles como:
 
-Este enfoque evita incorporar directamente nuevas responsabilidades dentro de la lógica transaccional del retiro.
+- Consulta de cuentas.
+- Consulta de saldo.
+- Retiros.
+
+La separaciÃ³n de los BFF permite aplicar polÃ­ticas especÃ­ficas segÃºn el canal sin trasladar esa responsabilidad directamente al Backend principal.
 
 ---
 
-## 5. Elección de Apache Kafka
+## 5. Seguridad con OAuth 2.0
 
-Se seleccionó **Apache Kafka** como plataforma de mensajería asíncrona.
+La arquitectura incorpora un Authorization Server independiente implementado mediante Spring Authorization Server.
 
-Kafka resulta adecuado para la solución debido a que proporciona:
-
-- Desacoplamiento entre productor y consumidor.
-- Persistencia temporal de eventos.
-- Organización mediante tópicos.
-- Particionamiento.
-- Procesamiento concurrente.
-- Posibilidad de incorporar nuevos consumidores en futuras etapas.
-
-En el entorno de desarrollo Kafka se ejecuta mediante Docker y utiliza un único broker.
-
----
-
-## 6. Diseño de tópicos
-
-La arquitectura contempla tres eventos bancarios principales:
-
-| Tópico | Estado |
-|---|---|
-| `retiro-realizado` | Implementado |
-| `deposito-realizado` | Preparado |
-| `transferencia-realizada` | Preparado |
-
-Los tres tópicos poseen:
+El flujo seleccionado es:
 
 ```text
-3 particiones
-Replication Factor: 1
+client_credentials
 ```
 
-El factor de replicación se mantiene en `1` porque el entorno académico utiliza un único broker Kafka.
+Este flujo resulta apropiado para la comunicaciÃ³n utilizada en el proyecto, donde cada cliente lÃ³gico obtiene un token utilizando sus propias credenciales.
 
-Durante esta etapa sólo `retiro-realizado` posee un flujo funcional completo de productor y consumidor.
-
-Los otros dos tópicos fueron definidos como preparación para la evolución posterior del sistema.
-
----
-
-## 7. Evento implementado
-
-El evento utilizado para representar un retiro correctamente procesado corresponde a:
+Se definen tres clientes:
 
 ```text
-RetiroRealizadoEvent
+bankxyz-web
+bankxyz-mobile
+bankxyz-atm
 ```
 
-Su contrato contiene:
-
-```text
-cuentaId
-monto
-saldoDisponible
-fechaHora
-```
-
-El evento no intenta representar el estado completo de la cuenta, sino únicamente la información necesaria para comunicar que el retiro ocurrió correctamente.
-
-La clave utilizada al publicar en Kafka corresponde a:
-
-```text
-cuentaId.toString()
-```
-
-El uso del identificador de cuenta como clave permite mantener una estrategia de particionado consistente para eventos relacionados con una misma cuenta.
-
----
-
-## 8. Flujo de procesamiento
-
-El flujo implementado corresponde a:
-
-```text
-Solicitud de retiro
-        │
-        ▼
-CuentaController
-        │
-        ▼
-CuentaService
-        │
-        ├──── Validaciones
-        │
-        ▼
-CuentaRepository
-        │
-        ▼
-Oracle Database
-        │
-        ▼
-Saldo actualizado
-        │
-        ▼
-RetiroRealizadoEvent
-        │
-        ▼
-RetiroEventProducer
-        │
-        ▼
-retiro-realizado
-        │
-        ▼
-RetiroEventConsumer
-        │
-        ▼
-Registro de auditoría
-```
-
-La publicación del evento ocurre después de procesar satisfactoriamente la actualización de la cuenta.
-
-Esto evita generar eventos de retiro para operaciones rechazadas por las validaciones de negocio.
-
----
-
-## 9. Estrategia de consumo y escalabilidad
-
-El tópico `retiro-realizado` posee tres particiones.
-
-El consumidor pertenece al grupo:
-
-```text
-auditoria-bankxyz
-```
-
-y está configurado con:
-
-```text
-concurrency = 3
-```
-
-La relación conceptual es:
-
-```text
-retiro-realizado
- ┌────┬────┬────┐
- P0   P1   P2
- └────┴────┴────┘
-        │
-        ▼
-auditoria-bankxyz
-        │
- ┌──────┼──────┐
- C1     C2     C3
-```
-
-Los tres consumidores corresponden a ejecución concurrente del mismo listener y no a tres microservicios independientes.
-
-Esta configuración permite distribuir el trabajo entre las particiones disponibles y demostrar procesamiento paralelo de eventos.
-
----
-
-## 10. Tolerancia a fallos
-
-Los BFF implementan tolerancia a fallos mediante **Resilience4j Circuit Breaker**.
-
-La configuración utilizada contempla:
-
-```text
-Sliding Window Size:       4
-Minimum Number of Calls:   2
-Failure Rate Threshold:   50 %
-Wait Duration Open State: 10 segundos
-```
-
-El objetivo es evitar que una dependencia no disponible provoque fallos sin controlar hacia los clientes.
-
-Cuando el backend principal presenta una indisponibilidad, el BFF ejecuta una respuesta fallback.
-
-Ejemplo:
-
-```text
-TEMPORALMENTE_NO_DISPONIBLE
-```
-
-Durante las pruebas se verificaron ambos estados:
-
-```text
-Backend disponible
-        ↓
-Datos reales
-```
-
-y:
-
-```text
-Backend no disponible
-        ↓
-Resilience4j
-        ↓
-Fallback controlado
-```
-
-De esta manera, la resiliencia se mantiene separada de la lógica de negocio bancaria.
-
----
-
-## 11. Persistencia y Event Sourcing
-
-Oracle Database continúa siendo la **fuente de verdad del estado actual de las cuentas**.
-
-Kafka se utiliza para comunicar hechos ocurridos después de las operaciones bancarias.
-
-Por esta razón, la solución implementada **no corresponde a Event Sourcing completo**.
-
-En esta arquitectura:
-
-```text
-Oracle
-   │
-   └── Estado actual de la cuenta
-
-Kafka
-   │
-   └── Eventos derivados de operaciones
-```
-
-El saldo no se reconstruye leyendo el historial de Kafka.
-
-Esta distinción permite utilizar los beneficios de una arquitectura orientada a eventos sin reemplazar el modelo de persistencia actualmente implementado.
-
----
-
-## 12. Seguridad y configuración
-
-La incorporación de Kafka mantiene los mecanismos de seguridad desarrollados previamente.
-
-Los BFF utilizan:
-
-- HTTPS.
-- JWT.
-- Scopes por canal.
-- Sesiones stateless.
-- Secretos almacenados mediante variables de entorno.
-
-Los canales se mantienen separados mediante:
+Cada uno dispone de un scope independiente:
 
 ```text
 WEB
@@ -354,166 +166,737 @@ MOBILE
 ATM
 ```
 
-Spring Cloud Config centraliza parámetros operativos de los BFF y Eureka proporciona registro y visualización de los servicios disponibles.
+---
 
-Estas capacidades permanecen independientes de la arquitectura Kafka.
+## 6. AutorizaciÃ³n mediante scopes
+
+Cada BFF funciona como OAuth2 Resource Server.
+
+Las rutas se protegen de acuerdo con el canal:
+
+```text
+/api/web/**     -> SCOPE_WEB
+/api/mobile/**  -> SCOPE_MOBILE
+/api/atm/**     -> SCOPE_ATM
+```
+
+Esto permite evitar que un token emitido para un determinado cliente sea utilizado sobre servicios pertenecientes a otro canal.
+
+Por ejemplo:
+
+```text
+Token WEB -> BFF Web       -> Permitido
+Token WEB -> BFF Mobile    -> HTTP 403
+Token WEB -> BFF ATM       -> HTTP 403
+```
+
+Con esta decisiÃ³n se separan claramente autenticaciÃ³n y autorizaciÃ³n.
+
+El Authorization Server autentica al cliente y emite el token, mientras cada Resource Server verifica el JWT y autoriza el acceso segÃºn el scope correspondiente.
 
 ---
 
-## 13. Decisiones de alcance
+## 7. EliminaciÃ³n de autenticaciÃ³n local duplicada
 
-Para mantener una implementación proporcional al alcance académico de esta etapa se definieron las siguientes decisiones:
+Anteriormente cada BFF gestionaba de manera independiente componentes relacionados con autenticaciÃ³n y generaciÃ³n de tokens.
 
-### Auditoría mediante logs
+La propuesta reemplaza dicho enfoque por un servidor de autorizaciÃ³n centralizado.
 
-El evento consumido se registra mediante el sistema de logs de la aplicación.
+Como consecuencia se eliminan de los BFF componentes como:
 
-Actualmente no existe una base de datos de auditoría independiente.
+```text
+AuthController
+AuthRequest
+TokenResponse
+JwtTokenService
+```
 
-### Un solo evento funcional
+Esta decisiÃ³n reduce duplicaciÃ³n de cÃ³digo y centraliza la responsabilidad de emisiÃ³n de credenciales.
 
-Se implementó completamente:
+Los BFF mantienen Ãºnicamente la responsabilidad de validar los JWT y aplicar autorizaciÃ³n.
+
+---
+
+## 8. ComunicaciÃ³n segura mediante HTTPS
+
+Los BFF Web, Mobile y ATM exponen sus endpoints mediante HTTPS.
+
+Para el ambiente de desarrollo se utilizan certificados autofirmados almacenados en keystores PKCS12.
+
+```text
+bff-web/keystore.p12
+bff-mobile/keystore.p12
+bff-atm/keystore.p12
+```
+
+Estos archivos no forman parte del repositorio debido a que contienen material criptogrÃ¡fico.
+
+Las contraseÃ±as de los keystores se obtienen mediante variables de entorno.
+
+---
+
+## 9. ConfiguraciÃ³n centralizada
+
+Spring Cloud Config continÃºa siendo utilizado para centralizar configuraciones de los BFF.
+
+El Config Server se encuentra disponible mediante:
+
+```text
+http://config-server:8888
+```
+
+dentro del entorno Docker.
+
+Entre las configuraciones centralizadas se encuentran:
+
+- URL del Backend.
+- URL de Eureka.
+- ConfiguraciÃ³n OAuth2 Resource Server.
+- Issuer URI del Authorization Server.
+- ParÃ¡metros de Resilience4j.
+- Puertos y configuraciÃ³n especÃ­fica por canal.
+
+La centralizaciÃ³n facilita realizar cambios sin distribuir configuraciones manualmente entre todos los componentes.
+
+---
+
+## 10. Service Discovery
+
+Eureka Server se mantiene como mecanismo de registro y descubrimiento de servicios.
+
+Puerto:
+
+```text
+8761
+```
+
+Los microservicios pueden registrarse dentro del ecosistema y exponer informaciÃ³n sobre su disponibilidad.
+
+La utilizaciÃ³n de Service Discovery permite mantener una arquitectura preparada para escenarios donde las instancias de servicios puedan cambiar dinÃ¡micamente.
+
+---
+
+## 11. Resiliencia con Resilience4j
+
+Se implementan mecanismos de tolerancia a fallos mediante Resilience4j en el BFF Web para las operaciones de lectura hacia el Backend.
+
+Los patrones utilizados son:
+
+```text
+Circuit Breaker
+Retry
+Bulkhead
+Fallback
+```
+
+---
+
+## 12. Circuit Breaker
+
+El Circuit Breaker permite detectar fallos repetidos del Backend.
+
+La configuraciÃ³n utiliza una ventana reducida para facilitar la detecciÃ³n del fallo durante las pruebas del proyecto.
+
+Ejemplo conceptual:
+
+```text
+Backend disponible
+      |
+      v
+Circuit Breaker CLOSED
+      |
+      v
+Solicitudes normales
+```
+
+Ante mÃºltiples fallos:
+
+```text
+Backend no disponible
+      |
+      v
+Fallos consecutivos
+      |
+      v
+Circuit Breaker OPEN
+      |
+      v
+No se realizan nuevas llamadas innecesarias
+      |
+      v
+Fallback
+```
+
+Cuando el circuito estÃ¡ abierto se evita continuar enviando solicitudes a un servicio que ya se encuentra detectado como indisponible.
+
+---
+
+## 13. Retry
+
+Se utilizan reintentos controlados para las operaciones de lectura.
+
+La configuraciÃ³n definida contempla:
+
+```text
+maxAttempts = 3
+waitDuration = 300 ms
+```
+
+Los reintentos se aplican Ãºnicamente ante errores compatibles con fallos temporales de infraestructura o servidor.
+
+No se reintentan automÃ¡ticamente errores de cliente.
+
+---
+
+## 14. Bulkhead
+
+El patrÃ³n Bulkhead limita el nÃºmero de operaciones concurrentes hacia el Backend.
+
+La configuraciÃ³n utilizada contempla:
+
+```text
+maxConcurrentCalls = 5
+maxWaitDuration = 0 ms
+```
+
+El objetivo es evitar que una saturaciÃ³n de llamadas hacia una dependencia afecte completamente la capacidad de respuesta del BFF.
+
+---
+
+## 15. Estrategia de fallback
+
+Cuando el Backend se encuentra temporalmente no disponible, el BFF Web retorna una respuesta controlada.
+
+Ejemplo:
+
+```text
+nombre = Servicio no disponible
+estado = TEMPORALMENTE_NO_DISPONIBLE
+```
+
+El objetivo es evitar que un fallo interno de infraestructura sea propagado directamente hacia el cliente como una respuesta no controlada.
+
+---
+
+## 16. Tratamiento especial de operaciones con efectos secundarios
+
+No se aplica Retry automÃ¡tico sobre la operaciÃ³n de retiro ATM.
+
+Esta decisiÃ³n es intencional.
+
+Una operaciÃ³n:
+
+```text
+POST retiro
+```
+
+modifica el estado financiero de una cuenta.
+
+Un reintento automÃ¡tico podrÃ­a provocar que, ante ciertas condiciones de red, una misma transacciÃ³n fuese procesada mÃ¡s de una vez.
+
+Por esta razÃ³n los mecanismos de reintento se utilizan sobre operaciones de lectura, mientras las operaciones transaccionales mantienen un tratamiento conservador.
+
+---
+
+## 17. Fallback seguro para retiros
+
+Ante indisponibilidad del Backend, el BFF ATM no informa falsamente que un retiro fue realizado.
+
+La respuesta de fallback utiliza:
+
+```text
+montoRetirado = null
+saldoDisponible = null
+estadoOperacion = NO_VERIFICADA
+```
+
+De esta forma se evita presentar al cliente una transacciÃ³n como confirmada cuando el BFF no puede verificar el resultado en el Backend.
+
+---
+
+## 18. Arquitectura orientada a eventos
+
+Para la mensajerÃ­a asÃ­ncrona se seleccionÃ³ Apache Kafka.
+
+Kafka permite desacoplar el procesamiento posterior de determinados eventos respecto de la operaciÃ³n principal.
+
+El evento implementado corresponde a:
 
 ```text
 retiro-realizado
 ```
 
-Los eventos de depósito y transferencia permanecen preparados para futuras etapas.
+Cuando el Backend confirma correctamente un retiro, genera un evento con informaciÃ³n de la operaciÃ³n.
 
-### Broker único
+Ejemplo:
 
-El entorno local utiliza un solo broker Kafka.
-
-Por ello no se busca demostrar alta disponibilidad del cluster, sino:
-
-- creación de tópicos;
-- particionado;
-- publicación;
-- consumo;
-- concurrencia.
-
----
-
-## 14. Limitaciones técnicas
-
-### Consistencia entre Oracle y Kafka
-
-La actualización de Oracle y la publicación del evento Kafka son operaciones independientes.
-
-Actualmente el flujo corresponde conceptualmente a:
-
-```text
-Actualizar Oracle
-      │
-      ▼
-Publicar Kafka
+```json
+{
+  "cuentaId": 101,
+  "monto": 1,
+  "saldoDisponible": 6579,
+  "fechaHora": "2026-10-04T17:17:42..."
+}
 ```
 
-Esto implica que, ante una falla excepcional ocurrida entre ambas operaciones, podría actualizarse correctamente Oracle sin llegar a publicarse el evento.
-
-Para el alcance actual esta condición se considera aceptable.
-
-En una solución productiva debería utilizarse un patrón especializado para resolver esta consistencia.
-
 ---
 
-### Persistencia de auditoría
+## 19. Productor Kafka
 
-Los eventos procesados se registran únicamente mediante logs.
+El Backend actÃºa como productor del evento.
 
-Una futura evolución podría almacenarlos en un repositorio específico de auditoría.
-
----
-
-### Alta disponibilidad Kafka
-
-El entorno posee:
+Flujo:
 
 ```text
-1 broker
-Replication Factor = 1
+Solicitud de retiro
+        |
+        v
+Backend procesa transacciÃ³n
+        |
+        v
+Retiro confirmado
+        |
+        v
+RetiroEventProducer
+        |
+        v
+Topic retiro-realizado
 ```
 
-Un ambiente productivo debería utilizar múltiples brokers y un factor de replicación mayor.
+La publicaciÃ³n ocurre despuÃ©s de que la operaciÃ³n bancaria fue procesada correctamente.
 
 ---
 
-## 15. Evolución propuesta
+## 20. Consumidor Kafka
 
-La arquitectura implementada permite continuar evolucionando sin modificar significativamente la lógica del retiro.
-
-Entre las extensiones posibles se encuentran:
+El Backend contiene consumidores pertenecientes al grupo:
 
 ```text
-retiro-realizado
-        │
-        ├── Auditoría
-        ├── Notificaciones
-        ├── Monitoreo
-        ├── Prevención de fraude
-        └── Analítica
+auditoria-bankxyz
 ```
 
-También pueden incorporarse los flujos:
+El consumidor procesa de manera asÃ­ncrona los eventos generados por retiros.
+
+El flujo completo queda definido como:
 
 ```text
-deposito-realizado
-transferencia-realizada
+BFF ATM
+   |
+   v
+Backend
+   |
+   v
+Retiro confirmado
+   |
+   v
+Kafka Producer
+   |
+   v
+Topic retiro-realizado
+   |
+   v
+Kafka Consumer
+   |
+   v
+AuditorÃ­a
 ```
-
-mediante sus respectivos producers y consumers.
 
 ---
 
-### Transactional Outbox
+## 21. Escalabilidad mediante particiones
 
-Una evolución relevante para un escenario productivo sería implementar el patrón **Transactional Outbox**.
-
-La idea sería almacenar el evento dentro de la misma transacción que modifica el estado bancario:
+El tÃ³pico `retiro-realizado` dispone de tres particiones:
 
 ```text
-Transacción Oracle
-   │
-   ├── Actualización cuenta
-   └── Registro evento pendiente
+retiro-realizado-0
+retiro-realizado-1
+retiro-realizado-2
 ```
 
-Posteriormente otro proceso publicaría el evento hacia Kafka.
+La aplicaciÃ³n utiliza tres consumidores dentro del grupo:
 
-Esto reduciría el riesgo de inconsistencia entre la actualización de Oracle y la publicación del mensaje.
+```text
+consumer-auditoria-bankxyz-1
+consumer-auditoria-bankxyz-2
+consumer-auditoria-bankxyz-3
+```
 
-Esta funcionalidad se plantea únicamente como evolución futura y no forma parte de la implementación actual.
+Kafka distribuye las particiones entre los consumidores.
 
----
+Ejemplo:
 
-## 16. Evaluación de la propuesta
+```text
+Consumer 1 -> retiro-realizado-0
+Consumer 2 -> retiro-realizado-1
+Consumer 3 -> retiro-realizado-2
+```
 
-La solución implementada permite demostrar:
-
-- Arquitectura orientada a eventos.
-- Definición explícita de tópicos.
-- Representación de mensajes y eventos.
-- Producer Kafka funcional.
-- Consumer Kafka funcional.
-- Procesamiento asíncrono.
-- Tres particiones.
-- Tres consumidores concurrentes.
-- Tolerancia a fallos mediante Resilience4j.
-- Respuesta fallback ante indisponibilidad.
-- Integración con la arquitectura BFF existente.
-
-Las evidencias de ejecución y el diagrama permiten verificar estos componentes de forma independiente.
+Esta distribuciÃ³n permite demostrar procesamiento paralelo y escalabilidad horizontal dentro del consumer group.
 
 ---
 
-## 17. Conclusión
+## 22. ContenerizaciÃ³n
 
-La incorporación de Apache Kafka permite que Bank XYZ evolucione desde una arquitectura basada principalmente en comunicaciones síncronas hacia una solución que combina procesamiento síncrono y asíncrono.
+Los componentes principales disponen de un `Dockerfile` independiente.
 
-Oracle mantiene la responsabilidad sobre el estado bancario, mientras Kafka distribuye eventos derivados de las operaciones realizadas.
+Se crean imÃ¡genes para:
 
-El modelo `Producer → Topic → Consumer` permite desacoplar responsabilidades y facilita futuras extensiones sin incorporar nuevas dependencias directamente en el flujo principal del retiro.
+```text
+bankxyz-backend
+bankxyz-discovery-server
+bankxyz-config-server
+bankxyz-auth-server
+bankxyz-bff-web
+bankxyz-bff-mobile
+bankxyz-bff-atm
+```
 
-El uso de tres particiones y tres consumidores concurrentes permite demostrar capacidad de procesamiento paralelo, mientras Resilience4j proporciona tolerancia a fallos en las comunicaciones entre los BFF y el backend principal.
+Apache Kafka utiliza su imagen correspondiente dentro de Docker Compose.
 
-La arquitectura resultante mantiene las capacidades implementadas previamente —BFF, seguridad, configuración centralizada y descubrimiento de servicios— e incorpora una base orientada a eventos preparada para continuar evolucionando durante las siguientes etapas del proyecto.
+Los Dockerfiles utilizan un proceso de construcciÃ³n multietapa, separando la compilaciÃ³n Maven del runtime final.
+
+---
+
+## 23. Docker Compose
+
+Docker Compose funciona como mecanismo de orquestaciÃ³n local del ecosistema.
+
+Una Ãºnica configuraciÃ³n permite levantar:
+
+```text
+Discovery Server
+Config Server
+Authorization Server
+Backend
+BFF Web
+BFF Mobile
+BFF ATM
+Kafka
+```
+
+Los ocho componentes funcionan de manera coordinada dentro del mismo entorno.
+
+La red utilizada es:
+
+```text
+bankxyz-network
+```
+
+Esto permite que los servicios se comuniquen utilizando los nombres definidos en Docker Compose.
+
+Ejemplos:
+
+```text
+backend:8080
+config-server:8888
+auth-server:9000
+kafka:29092
+```
+
+---
+
+## 24. ConfiguraciÃ³n de Kafka para Docker
+
+Kafka dispone de listeners separados para conexiones desde el host y desde los contenedores.
+
+```text
+HOST   -> localhost:9092
+DOCKER -> kafka:29092
+```
+
+Esta configuraciÃ³n evita que los servicios dentro de Docker intenten conectarse incorrectamente mediante `localhost`.
+
+El Backend utiliza dentro del entorno Docker:
+
+```text
+kafka:29092
+```
+
+---
+
+## 25. Persistencia
+
+La persistencia del sistema continÃºa utilizando Oracle Autonomous Database.
+
+El Backend accede a Oracle utilizando un Wallet externo.
+
+El Wallet no se incorpora dentro de:
+
+```text
+Git
+imagen Docker
+cÃ³digo fuente
+```
+
+Docker Compose monta el Wallet desde el sistema anfitriÃ³n hacia el contenedor.
+
+Su ubicaciÃ³n se configura mediante:
+
+```text
+ORACLE_WALLET_HOST_PATH
+```
+
+---
+
+## 26. GestiÃ³n de secretos
+
+La soluciÃ³n evita almacenar credenciales directamente en el cÃ³digo fuente.
+
+Se utiliza un archivo local:
+
+```text
+.env
+```
+
+que contiene variables como:
+
+```text
+BANKXYZ_DB_PASSWORD
+
+OAUTH_WEB_CLIENT_SECRET
+OAUTH_MOBILE_CLIENT_SECRET
+OAUTH_ATM_CLIENT_SECRET
+
+BFF_WEB_SSL_KEYSTORE_PASSWORD
+BFF_MOBILE_SSL_KEYSTORE_PASSWORD
+BFF_ATM_SSL_KEYSTORE_PASSWORD
+```
+
+El archivo `.env` se encuentra excluido mediante `.gitignore`.
+
+Para documentar la configuraciÃ³n requerida se incorpora:
+
+```text
+.env.example
+```
+
+sin valores reales.
+
+---
+
+## 27. Recursos excluidos del repositorio
+
+Por seguridad no deben versionarse:
+
+```text
+.env
+Oracle Wallet
+keystore.p12
+client secrets
+contraseÃ±as
+tokens OAuth2
+archivos temporales de pruebas
+```
+
+Los archivos `.dockerignore` tambiÃ©n evitan incluir recursos sensibles dentro del contexto de construcciÃ³n de las imÃ¡genes.
+
+---
+
+## 28. Estrategia de despliegue
+
+La soluciÃ³n puede desplegarse localmente mediante:
+
+```text
+docker compose up -d --build
+```
+
+Docker Compose construye y levanta la arquitectura completa.
+
+La secuencia lÃ³gica de inicio considera:
+
+```text
+Kafka
+Discovery Server
+Config Server
+Authorization Server
+Backend
+BFF Web
+BFF Mobile
+BFF ATM
+```
+
+Las dependencias declaradas y las polÃ­ticas de reinicio permiten que los componentes puedan estabilizarse progresivamente durante el arranque del ecosistema.
+
+---
+
+## 29. ValidaciÃ³n funcional
+
+La propuesta fue validada mediante pruebas sobre los distintos componentes.
+
+### OAuth2
+
+Se verificÃ³:
+
+```text
+Authorization Server -> entrega JWT
+Token WEB -> acceso BFF Web
+Token WEB -> rechazo HTTP 403 en BFF Mobile
+Token MOBILE -> acceso BFF Mobile
+Token ATM -> acceso BFF ATM
+```
+
+### Docker
+
+Se verificÃ³ la ejecuciÃ³n en contenedores de:
+
+```text
+Discovery Server
+Config Server
+Authorization Server
+Backend
+BFF Web
+BFF Mobile
+BFF ATM
+Kafka
+```
+
+### Docker Compose
+
+Se verificÃ³ que los ocho servicios fueran levantados desde una Ãºnica configuraciÃ³n y permanecieran en estado operativo.
+
+### Resilience4j
+
+Se verificÃ³:
+
+```text
+Backend disponible -> respuesta normal
+Backend detenido    -> fallback
+Fallos repetidos    -> Circuit Breaker OPEN
+```
+
+### Kafka
+
+Se verificÃ³:
+
+```text
+3 consumidores
+3 particiones
+publicaciÃ³n de evento
+consumo de evento
+```
+
+---
+
+## 30. Flujo funcional completo de retiro
+
+El flujo final de una operaciÃ³n de retiro es:
+
+```text
+Cliente ATM
+    |
+    | Solicita token
+    v
+Authorization Server
+    |
+    | JWT SCOPE_ATM
+    v
+BFF ATM
+    |
+    | POST retiro
+    v
+Backend Bank XYZ
+    |
+    +------> Oracle Autonomous Database
+    |             |
+    |             v
+    |        Actualiza saldo
+    |
+    v
+Retiro confirmado
+    |
+    v
+Kafka Producer
+    |
+    v
+Topic retiro-realizado
+    |
+    v
+Kafka Consumer
+    |
+    v
+AuditorÃ­a asÃ­ncrona
+```
+
+De esta manera se combinan:
+
+- Seguridad.
+- Persistencia.
+- SeparaciÃ³n por canal.
+- MensajerÃ­a asÃ­ncrona.
+- Escalabilidad.
+- ContenerizaciÃ³n.
+
+---
+
+## 31. Beneficios de la soluciÃ³n
+
+La arquitectura propuesta entrega los siguientes beneficios:
+
+### Seguridad
+
+OAuth 2.0 permite separar la emisiÃ³n de credenciales de los servicios que protegen recursos.
+
+Los scopes limitan el acceso segÃºn el tipo de cliente.
+
+### Desacoplamiento
+
+Kafka permite que operaciones posteriores al retiro puedan ejecutarse de manera asÃ­ncrona.
+
+### Resiliencia
+
+Resilience4j permite responder de manera controlada ante fallos temporales del Backend.
+
+### Escalabilidad
+
+Las particiones Kafka permiten distribuir procesamiento entre mÃºltiples consumidores.
+
+### Mantenibilidad
+
+La separaciÃ³n entre BFF, Backend, Authorization Server, Config Server y Discovery Server reduce responsabilidades mezcladas.
+
+### Portabilidad
+
+Docker permite ejecutar cada servicio dentro de un entorno independiente y reproducible.
+
+### OrquestaciÃ³n
+
+Docker Compose simplifica el levantamiento del ecosistema completo.
+
+### ProtecciÃ³n de secretos
+
+Las credenciales permanecen externas al cÃ³digo fuente mediante variables de entorno.
+
+---
+
+## 32. Consideraciones tÃ©cnicas
+
+La soluciÃ³n corresponde a un entorno acadÃ©mico y de desarrollo.
+
+Para un escenario productivo real serÃ­a recomendable complementar la arquitectura con:
+
+- Certificados TLS emitidos por una autoridad certificadora.
+- GestiÃ³n centralizada de secretos.
+- ReplicaciÃ³n de Kafka.
+- Alta disponibilidad del Authorization Server.
+- Observabilidad centralizada.
+- MÃ©tricas y alertas.
+- Trazabilidad distribuida.
+- Estrategias de despliegue en Kubernetes o servicios cloud equivalentes.
+
+Estas mejoras no son necesarias para demostrar los objetivos funcionales actuales, pero constituyen una evoluciÃ³n natural de la arquitectura.
+
+---
+
+## 33. ConclusiÃ³n
+
+La propuesta tÃ©cnica implementada permite evolucionar Bank XYZ desde una soluciÃ³n compuesta Ãºnicamente por APIs hacia un ecosistema distribuido que integra seguridad, resiliencia, descubrimiento de servicios, configuraciÃ³n centralizada, mensajerÃ­a asÃ­ncrona y contenerizaciÃ³n.
+
+OAuth 2.0 centraliza la autenticaciÃ³n y permite aplicar autorizaciÃ³n especÃ­fica mediante scopes.
+
+Resilience4j permite mantener respuestas controladas frente a fallos del Backend y evitar llamadas innecesarias cuando el Circuit Breaker se encuentra abierto.
+
+Apache Kafka incorpora una arquitectura orientada a eventos, permitiendo desacoplar el procesamiento de auditorÃ­a de la transacciÃ³n bancaria principal y distribuir mensajes entre mÃºltiples consumidores.
+
+Finalmente, Docker y Docker Compose permiten ejecutar y orquestar todos los componentes de manera reproducible dentro de un mismo entorno.
+
+El resultado es una arquitectura Bank XYZ mÃ¡s segura, mantenible, escalable y tolerante a fallos, preparada conceptualmente para su evoluciÃ³n hacia entornos cloud.

@@ -3,12 +3,12 @@ server:
 
 bankxyz:
   backend:
-    url: http://localhost:8080
+    url: ${BACKEND_URL:http://localhost:8080}
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
 
@@ -17,9 +17,14 @@ management:
     web:
       exposure:
         include: health,info
+
   endpoint:
     health:
       show-details: always
+
+  health:
+    circuitbreakers:
+      enabled: true
 
 resilience4j:
   circuitbreaker:
@@ -30,9 +35,29 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
 
+  retry:
+    instances:
+      backendRead:
+        maxAttempts: 3
+        waitDuration: 300ms
+        retryExceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException
+
+  bulkhead:
+    instances:
+      backendRead:
+        maxConcurrentCalls: 5
+        maxWaitDuration: 0ms
+
 bff:
   channel: web
-  jwt:
-    issuer: bff-web
-    scope: WEB
-    expiration-seconds: 1800
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_SERVER_ISSUER_URI:http://localhost:9000}

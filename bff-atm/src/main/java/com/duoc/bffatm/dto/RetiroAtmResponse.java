@@ -6,6 +6,7 @@ public record RetiroAtmResponse(
         Integer cuentaId,
         BigDecimal montoRetirado,
         BigDecimal saldoDisponible,
+        String estadoOperacion,
         String mensaje
 ) {
 }

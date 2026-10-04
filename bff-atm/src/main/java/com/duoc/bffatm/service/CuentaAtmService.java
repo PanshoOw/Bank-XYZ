@@ -2,13 +2,13 @@ package com.duoc.bffatm.service;
 
 import java.math.BigDecimal;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
 import com.duoc.bffatm.dto.CuentaBackendResponse;
 import com.duoc.bffatm.dto.RetiroAtmRequest;
@@ -19,6 +19,8 @@ import com.duoc.bffatm.dto.SaldoAtmResponse;
 @Service
 public class CuentaAtmService {
 
+        private static final Logger log =
+                LoggerFactory.getLogger(CuentaAtmService.class);
         private final RestClient restClient;
         private final CircuitBreaker circuitBreaker;
 
@@ -55,7 +57,9 @@ public class CuentaAtmService {
                         Integer id,
                         Throwable e) {
 
-                System.out.println("CIRCUIT BREAKER ACTIVADO: " + e.getMessage());
+                log.warn("Circuit Breaker activado al consultar saldo de la cuenta {}: {}",
+                        id,
+                        e.getMessage());
 
                 return new SaldoAtmResponse(
                                 id,
@@ -80,24 +84,26 @@ public class CuentaAtmService {
                                                         respuesta.cuentaId(),
                                                         respuesta.montoRetirado(),
                                                         respuesta.saldoDisponible(),
+                                                        "CONFIRMADA",
                                                         respuesta.mensaje());
                                 },
 
-                                throwable -> retirarFallback(id, request, throwable));
+                                throwable -> retirarFallback(id, throwable));
         }
 
         private RetiroAtmResponse retirarFallback(
                         Integer id,
-                        RetiroAtmRequest request,
                         Throwable e) {
 
-                System.out.println(
-                                "CIRCUIT BREAKER ACTIVADO: " + e.getMessage());
+                log.warn("Circuit Breaker activado al retirar de la cuenta {}: {}",
+                        id,
+                        e.getMessage());
 
                 return new RetiroAtmResponse(
-                                id,
-                                request.monto(),
-                                BigDecimal.ZERO,
-                                "Servicio temporalmente no disponible");
+                        id,
+                        null,
+                        null,
+                        "NO_VERIFICADA",
+                        "No fue posible confirmar el resultado del retiro. Consulte el saldo antes de reintentar.");
         }
 }
